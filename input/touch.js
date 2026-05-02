@@ -1,54 +1,69 @@
-// Touch / pointer input. The screen splits into a d-pad zone (bottom-left)
-// and a tap zone (everywhere else). Multi-touch is supported: one finger
-// can hold the d-pad while another taps to destroy.
+// Touch / pointer input.
+//
+// UX: any drag becomes movement (a floating d-pad anchors at the touch's
+// origin point and tracks the finger). Any release without dragging
+// past a small threshold is a tap, dispatched as a destroy event.
+// Multi-touch: one finger can drive the d-pad while another taps.
 
 import { pushPending } from './state.js';
 
-const DPAD_ZONE = { xFrac: 0.55, yFrac: 0.40 }; // bottom-left rectangle of screen
+const DRAG_THRESHOLD_PX = 6;
 
 export function bindTouchInput(canvas, dpad) {
+  // pointerId -> { startX, startY, currentX, currentY, mode: 'pending'|'dpad' }
+  const pointers = new Map();
   let dpadPointerId = null;
 
-  function inDpadZone(x, y) {
-    return x < window.innerWidth * DPAD_ZONE.xFrac
-        && y > window.innerHeight * (1 - DPAD_ZONE.yFrac);
-  }
-
   function onPointerDown(e) {
-    const x = e.clientX;
-    const y = e.clientY;
-    if (dpadPointerId === null && inDpadZone(x, y)) {
-      dpadPointerId = e.pointerId;
-      dpad.show(x, y);
-      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
-    } else {
-      // Tap zone — interpret as an aim point for now (Stage 0: destroy).
-      pushPending({ type: 'TapAt', screenX: x, screenY: y });
-    }
-    e.preventDefault();
+    pointers.set(e.pointerId, {
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+      mode: 'pending',
+    });
   }
 
   function onPointerMove(e) {
-    if (e.pointerId === dpadPointerId) {
-      dpad.move(e.clientX, e.clientY);
-      e.preventDefault();
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    p.currentX = e.clientX;
+    p.currentY = e.clientY;
+
+    if (p.mode === 'pending') {
+      const dist = Math.hypot(p.currentX - p.startX, p.currentY - p.startY);
+      if (dist > DRAG_THRESHOLD_PX && dpadPointerId === null) {
+        p.mode = 'dpad';
+        dpadPointerId = e.pointerId;
+        dpad.show(p.startX, p.startY);
+      }
+    }
+    if (p.mode === 'dpad') {
+      dpad.move(p.currentX, p.currentY);
     }
   }
 
   function onPointerUp(e) {
-    if (e.pointerId === dpadPointerId) {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    if (p.mode === 'pending') {
+      // Released without crossing the drag threshold: it's a tap.
+      pushPending({ type: 'TapAt', screenX: p.currentX, screenY: p.currentY });
+    } else if (p.mode === 'dpad') {
       dpad.hide();
       dpadPointerId = null;
-      e.preventDefault();
     }
+    pointers.delete(e.pointerId);
   }
 
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  canvas.addEventListener('pointerup', onPointerUp);
-  canvas.addEventListener('pointercancel', onPointerUp);
+  // Bind on window so a pointer that drifts off-canvas (e.g. onto the HUD,
+  // or off the screen edge) keeps reporting. The CSS sets pointer-events:none
+  // on every #ui child so this does not steal taps from real UI controls.
+  window.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
 
-  // Prevent iOS rubber-band & double-tap zoom.
+  // Prevent iOS pinch / double-tap zoom; touch-action on the canvas handles scrolling.
   document.addEventListener('gesturestart', (e) => e.preventDefault());
-  document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 }

@@ -14,7 +14,9 @@ export function createPlayerSprite() {
   const sprite = new THREE.Sprite(material);
   // Anchor at bottom-centre so the sprite stands on the floor.
   sprite.center.set(0.5, 0);
-  sprite.scale.set(1.1, 1.6, 1);
+  // Sized so the wizard reads as ~4 voxels tall and ~2 voxels wide,
+  // giving the world the dense voxel feel the design doc commits to.
+  sprite.scale.set(2.2, 3.6, 1);
   return sprite;
 }
 

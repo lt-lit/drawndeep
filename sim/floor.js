@@ -1,11 +1,18 @@
 // Hand-authored test floor for Stage 0. Stage 1 will replace this with
 // a procgen pipeline driven by the seeded RNG.
+//
+// Note on scale: voxels are intentionally small relative to the player.
+// A "logical cell" (the procgen tile in the design doc) will eventually
+// expand to several voxels per side (probably 4³ to 6³). The hand-authored
+// layout below already builds in that voxel density — walls are 8 voxels
+// tall, the player is ~4 voxels tall, etc.
 
 import { createGrid, setVoxel, MATERIAL } from './voxels.js';
 
-const W = 32;
-const H = 6;
-const D = 32;
+const W = 48;
+const H = 12;
+const D = 48;
+const WALL_TOP = 8;
 
 export const FLOOR_SIZE = { width: W, height: H, depth: D };
 
@@ -19,9 +26,8 @@ export function buildTestFloor() {
     }
   }
 
-  // Perimeter stone walls, 4 voxels tall
-  const wallTop = 4;
-  for (let y = 1; y <= wallTop; y++) {
+  // Perimeter stone walls
+  for (let y = 1; y <= WALL_TOP; y++) {
     for (let x = 0; x < W; x++) {
       setVoxel(grid, x, y, 0, MATERIAL.STONE);
       setVoxel(grid, x, y, D - 1, MATERIAL.STONE);
@@ -32,34 +38,41 @@ export function buildTestFloor() {
     }
   }
 
-  // Interior partition wall with a doorway
-  for (let y = 1; y <= 3; y++) {
-    for (let x = 6; x < W - 6; x++) {
-      if (x === 14 || x === 15) continue; // doorway
-      setVoxel(grid, x, y, 12, MATERIAL.STONE);
+  // Interior partition wall with a doorway 3 voxels wide
+  const partitionZ = 18;
+  const doorStart = 22;
+  const doorEnd = 25;
+  for (let y = 1; y <= 6; y++) {
+    for (let x = 8; x < W - 8; x++) {
+      if (x >= doorStart && x <= doorEnd && y <= 5) continue;
+      setVoxel(grid, x, y, partitionZ, MATERIAL.STONE);
     }
   }
 
-  // A few stone pillars
+  // Stone pillars, 6 tall
   const pillars = [
-    [6, 6], [6, 22],
-    [W - 7, 6], [W - 7, 22],
-    [W / 2 | 0, 22],
+    [10, 10], [10, 30],
+    [W - 11, 10], [W - 11, 30],
+    [W / 2 | 0, 32], [W / 2 | 0, 8],
   ];
   for (const [px, pz] of pillars) {
-    for (let y = 1; y <= 4; y++) {
+    for (let y = 1; y <= 6; y++) {
       setVoxel(grid, px, y, pz, MATERIAL.STONE);
     }
   }
 
-  // A wooden crate cluster — flammable accent for later stages
-  setVoxel(grid, 10, 1, 6, MATERIAL.WOOD);
-  setVoxel(grid, 11, 1, 6, MATERIAL.WOOD);
-  setVoxel(grid, 10, 2, 6, MATERIAL.WOOD);
+  // Wooden crate cluster — flammable accent for later stages
+  for (let dx = 0; dx < 2; dx++) {
+    for (let dz = 0; dz < 2; dz++) {
+      for (let dy = 0; dy < 2; dy++) {
+        setVoxel(grid, 14 + dx, 1 + dy, 9 + dz, MATERIAL.WOOD);
+      }
+    }
+  }
 
-  // A small water pool
-  for (let x = 20; x <= 23; x++) {
-    for (let z = 5; z <= 8; z++) {
+  // A water pool
+  for (let x = 30; x <= 36; x++) {
+    for (let z = 7; z <= 12; z++) {
       setVoxel(grid, x, 0, z, MATERIAL.WATER);
     }
   }
@@ -67,5 +80,5 @@ export function buildTestFloor() {
   return grid;
 }
 
-// Starting player position — middle of the larger room, on top of the floor.
-export const STARTING_POSITION = { x: W / 2, y: 1, z: D / 2 + 6 };
+// Starting position — south room, middle, on top of the floor.
+export const STARTING_POSITION = { x: W / 2, y: 1, z: D - 8 };
