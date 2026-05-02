@@ -27,7 +27,6 @@ function drawWizardTexture() {
   g.imageSmoothingEnabled = false;
 
   const cx = c.width / 2;
-  const w = c.width;
   const h = c.height;
 
   // Robe
@@ -85,11 +84,6 @@ function drawWizardTexture() {
   g.beginPath();
   g.arc(cx + 26, h * 0.16, 2, 0, Math.PI * 2);
   g.fill();
-
-  // Subtle outline
-  g.strokeStyle = 'rgba(0,0,0,0.4)';
-  g.lineWidth = 1;
-  g.strokeRect(0.5, 0.5, w - 1, h - 1);
 
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter;
