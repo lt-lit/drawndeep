@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <title>Drawn Deep — prototype</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a0a0f;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      touch-action: none;
+      overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #game {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    #ui {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+      touch-action: none;
+    }
+    #hud {
+      position: absolute;
+      top: env(safe-area-inset-top, 8px);
+      left: 0;
+      right: 0;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #c0c0d0;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      pointer-events: none;
+    }
+    #hud .label {
+      opacity: 0.55;
+      margin-right: 4px;
+    }
+    #hint {
+      position: absolute;
+      bottom: env(safe-area-inset-bottom, 16px);
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 11px;
+      color: #888;
+      opacity: 0.7;
+      padding: 0 16px;
+      pointer-events: none;
+    }
+    .dpad-base {
+      position: absolute;
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px solid rgba(255, 255, 255, 0.18);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    .dpad-stick {
+      position: absolute;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.35);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="ui">
+    <div id="hud">
+      <div><span class="label">Floor</span><span id="hud-floor">1</span></div>
+      <div><span class="label">Voxels</span><span id="hud-voxels">0</span></div>
+      <div><span class="label">FPS</span><span id="hud-fps">0</span></div>
+    </div>
+    <div id="hint">Drag to move &middot; tap to destroy a voxel</div>
+  </div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
