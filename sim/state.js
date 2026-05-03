@@ -2,7 +2,7 @@
 // Mutating the underlying voxel TypedArray is acceptable because the
 // reducer owns the grid; no consumer holds a reference between dispatches.
 
-import { buildTestFloor, STARTING_POSITION } from './floor.js';
+import { buildFloor } from './floor.js';
 import {
   getVoxel, setVoxel, isSolid, MATERIAL,
   createChunks, bumpAffectedChunks,
@@ -14,15 +14,23 @@ const PLAYER_HEIGHT = 10;         // voxels — full-body collision iterates thi
 const TICKS_PER_SECOND = 60;
 
 export function initialState(seed = 1) {
-  const grid = buildTestFloor();
+  return floorState(seed >>> 0, /*floor=*/ 1);
+}
+
+// Build the per-floor portion of state. Used both at boot and on RegenFloor;
+// resets player position, voxel grid, chunks, and bumps floorRevision so the
+// renderer knows to drop its cached chunk meshes.
+function floorState(seed, floor, prev) {
+  const { grid, startingPosition } = buildFloor(seed);
   return {
-    seed: seed >>> 0,
-    tick: 0,
-    floor: 1,
+    seed,
+    tick: prev ? prev.tick : 0,
+    floor,
     voxelRevision: 0,
+    floorRevision: prev ? prev.floorRevision + 1 : 0,
     grid,
     chunks: createChunks(grid.width, grid.height, grid.depth),
-    player: { ...STARTING_POSITION },
+    player: { ...startingPosition },
   };
 }
 
@@ -32,6 +40,8 @@ export function reducer(state, action) {
       return tickReducer(state, action);
     case 'DestroyVoxel':
       return destroyReducer(state, action);
+    case 'RegenFloor':
+      return floorState(action.seed >>> 0, state.floor, state);
     default:
       return state;
   }

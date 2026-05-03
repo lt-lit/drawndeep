@@ -22,7 +22,12 @@ export function bindDesktopInput(canvas) {
   }
 
   window.addEventListener('keydown', (e) => {
-    pressed.add(e.key.toLowerCase());
+    const key = e.key.toLowerCase();
+    if (key === 'r' && !e.repeat) {
+      pushPending({ type: 'RegenFloor' });
+      return;
+    }
+    pressed.add(key);
     updateIntent();
   });
   window.addEventListener('keyup', (e) => {

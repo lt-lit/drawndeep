@@ -49,6 +49,9 @@ export function createScene(canvas, initialState) {
   scene.add(voxelWorld.group);
   const lastChunkRevisions = new Uint32Array(chunkCount(initialState.chunks));
   lastChunkRevisions.set(initialState.chunks.revisions);
+  // Track grid identity so a RegenFloor (which swaps the grid object) forces
+  // a full mesh rebuild even if the new chunks happen to share revisions.
+  let lastGrid = initialState.grid;
 
   // Player sprite (billboarded).
   const playerSprite = createPlayerSprite();
@@ -67,6 +70,14 @@ export function createScene(canvas, initialState) {
   window.addEventListener('resize', resize);
 
   function render(state) {
+    // Floor regen swaps grid + chunks atomically. Force every chunk to
+    // refresh by poisoning the revision cache (new chunks start at 0;
+    // 0xFFFFFFFF guarantees a mismatch on the next compare).
+    if (state.grid !== lastGrid) {
+      lastChunkRevisions.fill(0xFFFFFFFF);
+      lastGrid = state.grid;
+      cameraInitialised = false;
+    }
     // Rebuild only the chunks whose revision counter changed.
     refreshDirtyChunks(voxelWorld.handles, state.grid, state.chunks, lastChunkRevisions);
 

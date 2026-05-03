@@ -44,6 +44,10 @@ function frame(now) {
         if (voxel) {
           state = reducer(state, { type: 'DestroyVoxel', x: voxel.x, y: voxel.y, z: voxel.z });
         }
+      } else if (ev.type === 'RegenFloor') {
+        // Seed source is wall-clock since input is outside the sim. The
+        // reducer treats it as opaque data and reseeds the floor PRNG.
+        state = reducer(state, { type: 'RegenFloor', seed: Date.now() >>> 0 });
       }
     }
   }
