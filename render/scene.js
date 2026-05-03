@@ -4,10 +4,10 @@ import * as THREE from 'three';
 import { buildVoxelMesh, refreshVoxelMesh } from './voxel-mesh.js';
 import { createPlayerSprite } from './sprites.js';
 
-// ~45° from vertical, pulled back enough to frame a 6-voxel-tall character
-// against 10-voxel walls. Scale together if you change the player size.
-const CAMERA_OFFSET = new THREE.Vector3(0, 30, 30);
-const CAMERA_LOOK_AHEAD = new THREE.Vector3(0, 3, 0);
+// ~45° from vertical, pulled back enough to frame a 10-voxel-tall character
+// against 12-voxel walls. Scale together if you change the player size.
+const CAMERA_OFFSET = new THREE.Vector3(0, 44, 44);
+const CAMERA_LOOK_AHEAD = new THREE.Vector3(0, 5, 0);
 const CAMERA_LERP = 0.12;
 const FOV = 35;
 
@@ -21,7 +21,7 @@ export function createScene(canvas, initialState) {
   renderer.setClearColor(0x0a0a0f, 1);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0x0a0a0f, 40, 95);
+  scene.fog = new THREE.Fog(0x0a0a0f, 50, 130);
 
   const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 200);
   const cameraTarget = new THREE.Vector3();

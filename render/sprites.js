@@ -14,10 +14,10 @@ export function createPlayerSprite() {
   const sprite = new THREE.Sprite(material);
   // Anchor at bottom-centre so the sprite stands on the floor.
   sprite.center.set(0.5, 0);
-  // Sized so the wizard reads as ~6 voxels tall — voxel "Steve scale".
-  // Walls of 10 voxels, props of 1-3 voxels, characters of 6 voxels gives
-  // the dense, detail-rich voxel feel the design doc commits to.
-  sprite.scale.set(3.0, 6.0, 1);
+  // Sized so the wizard reads as ~10 voxels tall (12-voxel walls, 5-voxel
+  // crates, 10-voxel character). Match render/scene.js camera offset and
+  // sim/state.js PLAYER_HEIGHT if you change this.
+  sprite.scale.set(5.0, 10.0, 1);
   return sprite;
 }
 
