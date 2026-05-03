@@ -5,8 +5,8 @@
 import { buildTestFloor, STARTING_POSITION } from './floor.js';
 import { getVoxel, setVoxel, isSolid, MATERIAL } from './voxels.js';
 
-const PLAYER_SPEED = 0.14;        // voxels per tick (~8 voxels/sec at 60Hz)
-const PLAYER_RADIUS = 0.45;
+const PLAYER_SPEED = 0.22;        // voxels per tick (~13 voxels/sec at 60Hz)
+const PLAYER_RADIUS = 0.5;
 const TICKS_PER_SECOND = 60;
 
 export function initialState(seed = 1) {
