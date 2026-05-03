@@ -102,7 +102,8 @@ The world is a 3D grid of voxels. Each voxel has:
 - Optional **state** flags (on fire, frozen, lit)
 
 Procgen carves walls, floors, corridors, and props directly into the voxel grid. There is no intermediate logical-cell representation the runtime sees — rooms are placed and walls are 3 voxels thick because we picked 3, not because some upstream tile got expanded. Materials drive both gameplay (interactions) and rendering (color, lighting).
-Walls extrude vertically from the 2D logical grid. A "stone wall" cell becomes a column of stone voxels of fixed height. A "floor" cell is empty above a single floor voxel. Materials drive both gameplay rules and rendering colors.
+
+Walls have organic 3D shape — tops, edges, and inner corners are sculpted to look like carved rock, not extruded blocks. The player walks a single 2D floor plane; vertical variation in wall geometry is visual only and never gameplay-relevant.
 
 ### Destruction
 
@@ -392,7 +393,7 @@ The history of this design conversation included repeatedly expanding scope towa
 - Real asset packs (programmer art only)
 - 3D character models (billboarded sprites only)
 - Free-rotating camera (fixed angle only)
-- Verticality within a single floor (floors are 2D extruded into 3D)
+- Gameplay verticality within a single floor (no jumping, climbing, or multi-level levels). Walls and ceilings have visual 3D shape; the player walks a single 2D plane.
 - Pet system / followers
 - Crafting
 - Inventory beyond cards (no equipment slots, no consumables that aren't cards)
