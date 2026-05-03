@@ -1,60 +1,114 @@
-// Voxel grid -> Three.js InstancedMesh. Only renders voxels exposed to air.
-// On grid change we rebuild the entire instance buffer; for a 32x6x32 grid
-// this is well under a millisecond. Stage 1+ should chunk this when floors
-// scale up.
+// Voxel grid -> Three.js chunked InstancedMeshes.
+//
+// One InstancedMesh per CHUNK_SIZE^3 region. Each chunk's mesh is
+// rebuilt only when its revision counter (in sim/voxels.js chunks)
+// changes, so a single voxel destruction touches 1-7 chunks instead
+// of the whole world.
+//
+// Frustum culling is left off: the chunk InstancedMesh has the wrong
+// default bounds (a unit cube at origin), so Three would cull
+// incorrectly. For the floor sizes we care about right now the cost
+// of "draw every chunk" is negligible. Add proper bounds + culling
+// when floor size goes past ~256 voxels per side.
 
 import * as THREE from 'three';
-import { getVoxel, isExposed, MATERIAL, indexOf } from '../sim/voxels.js';
+import {
+  isExposed, MATERIAL, indexOf, chunkCount, chunkIndex, CHUNK_SIZE,
+} from '../sim/voxels.js';
 
 const COLOR_BY_MATERIAL = {
-  [MATERIAL.STONE]:  new THREE.Color('#7c7c84'),
-  [MATERIAL.DIRT]:   new THREE.Color('#5a4128'),
-  [MATERIAL.WOOD]:   new THREE.Color('#9c6d3a'),
-  [MATERIAL.WATER]:  new THREE.Color('#3a6cd6'),
-  [MATERIAL.LAVA]:   new THREE.Color('#e85a18'),
-  [MATERIAL.ICE]:    new THREE.Color('#bfe8ff'),
+  [MATERIAL.STONE]: new THREE.Color('#7c7c84'),
+  [MATERIAL.DIRT]:  new THREE.Color('#5a4128'),
+  [MATERIAL.WOOD]:  new THREE.Color('#9c6d3a'),
+  [MATERIAL.WATER]: new THREE.Color('#3a6cd6'),
+  [MATERIAL.LAVA]:  new THREE.Color('#e85a18'),
+  [MATERIAL.ICE]:   new THREE.Color('#bfe8ff'),
 };
 
-const TINT_BY_HEIGHT = 0.04; // gentle vertical shading so cubes read as 3D
+const TINT_BY_HEIGHT = 0.04;
 const tmpMatrix = new THREE.Matrix4();
 const tmpColor = new THREE.Color();
 
-export function buildVoxelMesh(grid) {
-  const capacity = grid.width * grid.height * grid.depth;
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshLambertMaterial({ vertexColors: false });
-  const mesh = new THREE.InstancedMesh(geometry, material, capacity);
-  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
-  mesh.frustumCulled = false; // floor is small and centered; skip culling cost
-  mesh.count = 0;
+// Shared geometry + material across all chunks.
+const sharedGeometry = new THREE.BoxGeometry(1, 1, 1);
+const sharedMaterial = new THREE.MeshLambertMaterial();
 
-  // instanceToVoxel[i] = {x,y,z} for the voxel at instance index i.
-  // Used to translate raycaster hits back to voxel coordinates.
-  const instanceToVoxel = new Array(capacity);
-  const out = { object: mesh, instanceToVoxel };
-  refreshVoxelMesh(out, grid);
-  return out;
+export function buildVoxelMeshes(grid, chunks) {
+  const total = chunkCount(chunks);
+  const handles = new Array(total);
+  const group = new THREE.Group();
+
+  for (let cz = 0; cz < chunks.nz; cz++) {
+    for (let cy = 0; cy < chunks.ny; cy++) {
+      for (let cx = 0; cx < chunks.nx; cx++) {
+        const handle = createChunkHandle(chunks, cx, cy, cz);
+        handles[chunkIndex(chunks, cx, cy, cz)] = handle;
+        group.add(handle.object);
+        refreshChunk(handle, grid, chunks, cx, cy, cz);
+      }
+    }
+  }
+
+  return { group, handles };
 }
 
-export function refreshVoxelMesh(meshHandle, grid) {
-  const mesh = meshHandle.object;
+function createChunkHandle(chunks, cx, cy, cz) {
+  const cs = chunks.size;
+  const capacity = cs * cs * cs;
+  const mesh = new THREE.InstancedMesh(sharedGeometry, sharedMaterial, capacity);
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(
+    new Float32Array(capacity * 3), 3,
+  );
+  mesh.frustumCulled = false;
+  mesh.count = 0;
+  // Chunk meshes carry world coords directly in their instance matrices,
+  // so position stays at origin. (Switching to chunk-local matrices is
+  // the right move once we add per-chunk frustum culling.)
+
+  // 16-bit packed local coords: (zl<<8)|(yl<<4)|xl. Decode on raycast hit.
+  const instanceLocal = new Uint16Array(capacity);
+
+  const handle = { object: mesh, instanceLocal, cx, cy, cz };
+  mesh.userData.chunkHandle = handle;
+  return handle;
+}
+
+export function refreshDirtyChunks(handles, grid, chunks, lastRevisions) {
+  const total = chunkCount(chunks);
+  for (let i = 0; i < total; i++) {
+    if (chunks.revisions[i] !== lastRevisions[i]) {
+      const handle = handles[i];
+      refreshChunk(handle, grid, chunks, handle.cx, handle.cy, handle.cz);
+      lastRevisions[i] = chunks.revisions[i];
+    }
+  }
+}
+
+function refreshChunk(handle, grid, chunks, cx, cy, cz) {
+  const cs = chunks.size;
+  const x0 = cx * cs;
+  const y0 = cy * cs;
+  const z0 = cz * cs;
+  const x1 = Math.min(x0 + cs, grid.width);
+  const y1 = Math.min(y0 + cs, grid.height);
+  const z1 = Math.min(z0 + cs, grid.depth);
+
+  const mesh = handle.object;
   let i = 0;
-  for (let z = 0; z < grid.depth; z++) {
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
+  for (let z = z0; z < z1; z++) {
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
         const m = grid.cells[indexOf(grid, x, y, z)];
         if (m === MATERIAL.AIR) continue;
         if (!isExposed(grid, x, y, z)) continue;
         const base = COLOR_BY_MATERIAL[m] || COLOR_BY_MATERIAL[MATERIAL.STONE];
         tmpColor.copy(base);
-        // Slight darken at lower y so floor and walls read distinctly.
         const tint = 1 - (grid.height - 1 - y) * TINT_BY_HEIGHT;
         tmpColor.multiplyScalar(tint);
-        // Centre voxels on the integer coord, with the bottom face at y=floor(y).
         tmpMatrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
         mesh.setMatrixAt(i, tmpMatrix);
         mesh.setColorAt(i, tmpColor);
-        meshHandle.instanceToVoxel[i] = { x, y, z };
+        handle.instanceLocal[i] = (x - x0) | ((y - y0) << 4) | ((z - z0) << 8);
         i++;
       }
     }
@@ -62,4 +116,19 @@ export function refreshVoxelMesh(meshHandle, grid) {
   mesh.count = i;
   mesh.instanceMatrix.needsUpdate = true;
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+}
+
+// Resolve a raycast hit on a chunk mesh back to world voxel coordinates.
+export function voxelFromHit(hit) {
+  const handle = hit.object && hit.object.userData && hit.object.userData.chunkHandle;
+  if (!handle) return null;
+  const packed = handle.instanceLocal[hit.instanceId];
+  const xl = packed & 0xF;
+  const yl = (packed >> 4) & 0xF;
+  const zl = (packed >> 8) & 0xF;
+  return {
+    x: handle.cx * CHUNK_SIZE + xl,
+    y: handle.cy * CHUNK_SIZE + yl,
+    z: handle.cz * CHUNK_SIZE + zl,
+  };
 }

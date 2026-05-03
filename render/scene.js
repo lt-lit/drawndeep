@@ -1,7 +1,8 @@
 // Three.js scene setup + per-frame render. Reads sim state, never mutates it.
 
 import * as THREE from 'three';
-import { buildVoxelMesh, refreshVoxelMesh } from './voxel-mesh.js';
+import { buildVoxelMeshes, refreshDirtyChunks, voxelFromHit } from './voxel-mesh.js';
+import { chunkCount } from '../sim/voxels.js';
 import { createPlayerSprite } from './sprites.js';
 
 // Camera framing: ~25° from vertical (very top-down, more map-like than
@@ -41,15 +42,18 @@ export function createScene(canvas, initialState) {
   fill.position.set(8, 6, -10);
   scene.add(fill);
 
-  // Voxel mesh + lookup from instance index back to voxel coords for picking.
-  const voxelMesh = buildVoxelMesh(initialState.grid);
-  scene.add(voxelMesh.object);
+  // One InstancedMesh per chunk; only chunks whose revision changed get
+  // rebuilt. lastChunkRevisions mirrors state.chunks.revisions one frame
+  // behind so we know which chunks the sim has dirtied.
+  const voxelWorld = buildVoxelMeshes(initialState.grid, initialState.chunks);
+  scene.add(voxelWorld.group);
+  const lastChunkRevisions = new Uint32Array(chunkCount(initialState.chunks));
+  lastChunkRevisions.set(initialState.chunks.revisions);
 
   // Player sprite (billboarded).
   const playerSprite = createPlayerSprite();
   scene.add(playerSprite);
 
-  let lastVoxelRevision = initialState.voxelRevision;
   let cameraInitialised = false;
 
   function resize() {
@@ -63,11 +67,8 @@ export function createScene(canvas, initialState) {
   window.addEventListener('resize', resize);
 
   function render(state) {
-    // Rebuild voxel mesh if the grid changed.
-    if (state.voxelRevision !== lastVoxelRevision) {
-      refreshVoxelMesh(voxelMesh, state.grid);
-      lastVoxelRevision = state.voxelRevision;
-    }
+    // Rebuild only the chunks whose revision counter changed.
+    refreshDirtyChunks(voxelWorld.handles, state.grid, state.chunks, lastChunkRevisions);
 
     // Player sprite tracks player position; sprite is anchored at its bottom.
     playerSprite.position.set(state.player.x, state.player.y, state.player.z);
@@ -104,11 +105,9 @@ export function createScene(canvas, initialState) {
     ndc.x = ((screenX - rect.left) / rect.width) * 2 - 1;
     ndc.y = -((screenY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObject(voxelMesh.object, false);
+    const hits = raycaster.intersectObjects(voxelWorld.group.children, false);
     if (hits.length === 0) return null;
-    const hit = hits[0];
-    const voxel = voxelMesh.instanceToVoxel[hit.instanceId];
-    return voxel || null;
+    return voxelFromHit(hits[0]);
   }
 
   return { render, pickVoxel, renderer };

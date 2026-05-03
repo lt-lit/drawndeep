@@ -19,11 +19,28 @@ Combine those three and you get a game that doesn't currently exist in the deckb
 
 ## Visual style
 
-**2.5D Pokemon-style voxel.** Fixed-angle camera tilted ~50° from vertical, smooth follow on the player. Walls extrude as 3D voxel geometry from a 2D logical grid. Characters and props are billboarded 2D sprites — they always face the camera, animation costs stay low, and the art pipeline is closer to 2D than 3D.
+**2.5D Pokemon-style voxel.** Fixed-angle camera tilted toward top-down (the prototype currently sits around 25° from vertical — more map-like than Pokemon's classic ~50°), smooth follow on the player. The world is a 3D voxel grid throughout: terrain, walls, and destructible furniture and props are all voxels with real volume. Characters (player, enemies) are billboarded 2D sprites that always face the camera, keeping animation costs low and the art pipeline closer to 2D than 3D.
 
 This visual language is distinctive in the deckbuilder genre (most deckbuilders are flat 2D) and well-suited to the destruction mechanics — voxel walls have real volume, can be visibly broken, and rubble can pile and become traversable terrain.
 
-**No external asset packs in v1.** All art is programmer art: voxel terrain rendered with material-based colors, procedurally drawn billboard sprites for characters and props. The aesthetic decision (what art style to commit to) is deferred until the gameplay is validated. See the open questions doc for the eventual decision tree.
+**No external asset packs in v1.** All art is programmer art: voxel terrain rendered with material-based colors, procedurally drawn billboard sprites for characters. The aesthetic decision (what art style to commit to) is deferred until the gameplay is validated. See the open questions doc for the eventual decision tree.
+
+### Voxel scale
+
+Movement and spell shapes (cones, spheres, projectiles) are continuous floats — *not* tied to any coarser grid. The voxel grid is the only grid in the game, and voxels are the unit of destruction and the unit the cellular automata operate on. Procgen carves rooms, corridors, and props directly into voxels. There is no separate "logical cell" or "tile" concept that the runtime sees.
+
+The prototype settled on these dimensions after early playtesting:
+
+| Thing | Voxels |
+|---|---|
+| Player character | ~10 tall, ~3 wide |
+| Walls | 14 tall, 3 thick |
+| Doorways | ≥7 wide, ≥11 tall |
+| Pillars | 3×3 shaft, 5×5 capital |
+| Furniture / props | 2-7 per side (crate, altar, statue) |
+| Corridors | ≥4 wide |
+
+These set the implicit "1 voxel ≈ 0.2m" mapping. The numbers will tune over time but the relative ratios are the design's anchor — anything taller/larger than the player towers; anything 2-3 voxels is hand-prop scale.
 
 ---
 
@@ -79,7 +96,7 @@ The world is a 3D grid of voxels. Each voxel has:
 - An **HP** value if destructible
 - Optional **state** (on fire, frozen, lit)
 
-Walls extrude vertically from the 2D logical grid. A "stone wall" cell becomes a column of stone voxels of fixed height. A "floor" cell is empty above a single floor voxel. Materials drive both gameplay (interactions) and rendering (color, lighting).
+Procgen carves walls, floors, corridors, and props directly into the voxel grid. There is no intermediate logical-cell representation the runtime sees — rooms are placed and walls are 3 voxels thick because we picked 3, not because some upstream tile got expanded. Materials drive both gameplay (interactions) and rendering (color, lighting).
 
 ### Destruction
 
@@ -114,7 +131,7 @@ Out of combat (free roam), the environment ticks at a slower fixed rate (maybe o
 
 Each floor is a self-contained procgen dungeon. Floors don't connect except via stairs/pits. This bounds memory and rendering — the engine only ever holds the current floor (and possibly a cached previous floor) in memory.
 
-Target floor size: 60-100 cells per side, navigable in 3-5 minutes by an experienced player.
+Target floor size: ~200-400 voxels per side at the established scale, holding 20-60 rooms with the room/corridor mix described above. Navigable in 3-5 minutes by an experienced player. Smaller floors (96 voxels per side, 6-10 rooms) are appropriate for the early prototype stages before chunked meshing is in.
 
 ### Biomes
 

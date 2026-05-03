@@ -3,7 +3,10 @@
 // reducer owns the grid; no consumer holds a reference between dispatches.
 
 import { buildTestFloor, STARTING_POSITION } from './floor.js';
-import { getVoxel, setVoxel, isSolid, MATERIAL } from './voxels.js';
+import {
+  getVoxel, setVoxel, isSolid, MATERIAL,
+  createChunks, bumpAffectedChunks,
+} from './voxels.js';
 
 const PLAYER_SPEED = 0.30;        // voxels per tick (~18 voxels/sec at 60Hz, ~1.8 player-heights/sec)
 const PLAYER_RADIUS = 1.0;        // half-width in voxels; AABB is 2x2 in plan view
@@ -11,12 +14,14 @@ const PLAYER_HEIGHT = 10;         // voxels — full-body collision iterates thi
 const TICKS_PER_SECOND = 60;
 
 export function initialState(seed = 1) {
+  const grid = buildTestFloor();
   return {
     seed: seed >>> 0,
     tick: 0,
     floor: 1,
-    voxelRevision: 0,                // bumped whenever the grid changes; render uses this to know when to remesh
-    grid: buildTestFloor(),
+    voxelRevision: 0,
+    grid,
+    chunks: createChunks(grid.width, grid.height, grid.depth),
     player: { ...STARTING_POSITION },
   };
 }
@@ -68,6 +73,7 @@ function destroyReducer(state, action) {
   const { x, y, z } = action;
   if (getVoxel(state.grid, x, y, z) === MATERIAL.AIR) return state;
   setVoxel(state.grid, x, y, z, MATERIAL.AIR);
+  bumpAffectedChunks(state.chunks, x, y, z);
   return {
     ...state,
     voxelRevision: state.voxelRevision + 1,
