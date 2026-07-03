@@ -1,12 +1,19 @@
-# Drawn Deep — Design & Build Doc
+# Drawn Deep — Design & Build Doc (v2)
 
 This is the single source of truth for the Drawn Deep project. If you are a Claude Code session reading this file, this is your operating manual. Read it fully before making changes.
 
-The doc is organized in three parts:
+**This doc replaces the v1 design entirely.** The three headline changes from v1, and why:
+
+1. **Procgen is now template-based, not algorithmic.** The v1 cellular-automata cave generator (branch `claude/procgen-dungeon-design-Sq4hh`) produced levels that were structureless and perceptually identical across seeds. This was not a tuning failure — a CA converges to one connected organic blob with no rooms, no chokepoints, no destinations, and no critical path, regardless of parameters. The replacement is a library of **designed room templates stored as data files in the repo**, assembled at runtime by a connector-matching layout algorithm. Design intent lives in reviewable artifacts, not inside an algorithm.
+2. **Characters are 3D voxel-part models, not billboarded sprites.** Rigid voxel parts (head, torso, limbs) defined as data, animated procedurally. They rotate correctly under the new camera, match the voxel world, require no external art pipeline, and are fully authorable as JSON.
+3. **Snap-rotate camera and light in-room verticality.** The camera yaws in 90° steps between four fixed angles. Rooms may contain pits, ledges, and raised platforms; room-to-room connections stay at ground level.
+
+The doc is organized in four parts:
 
 1. **What we're building** — the game vision and design
-2. **How we're building it** — architecture, stack, and rules
-3. **What to build first** — the immediate prototype scope and how to start
+2. **The content pipeline** — how rooms and characters get made (new, load-bearing)
+3. **How we're building it** — architecture, stack, and rules
+4. **What to build next** — stages and immediate scope
 
 ---
 
@@ -14,28 +21,28 @@ The doc is organized in three parts:
 
 ## The pitch
 
-A 2.5D voxel dungeon-crawling deckbuilder for mobile web. Player descends through procedurally generated voxel dungeons, casting cards as spells that interact with destructible 3D terrain and simulated materials. Combat is turn-based and tactical; exploration is real-time. Hosted as a static site on GitHub Pages.
+A 3D voxel dungeon-crawling deckbuilder for mobile web. The player descends through procedurally assembled voxel dungeons, casting cards as spells that interact with destructible terrain and simulated materials. Combat is turn-based and tactical; exploration is real-time. Hosted as a static site on GitHub Pages.
 
 Three influences:
 - **Slay the Spire / Inscryption** — deckbuilder roguelike progression
 - **Noita** — emergent material interactions, satisfying environmental destruction
-- **Pokemon (late gen, Sword/Shield era)** — 2.5D voxel aesthetic with billboarded characters
+- **Crossy Road / Cube World** — chunky voxel characters with procedural part animation
 
 The combination doesn't currently exist in the deckbuilder genre and is the project's distinguishing premise.
 
 ## Visual style
 
-**2.5D Pokemon-style voxel.** Fixed-angle camera tilted toward top-down (the prototype currently sits around 25° from vertical — more map-like than Pokemon's classic ~50°), smooth follow on the player. The world is a 3D voxel grid throughout: terrain, walls, and destructible furniture and props are all voxels with real volume. Characters (player, enemies) are billboarded 2D sprites that always face the camera, keeping animation costs low and the art pipeline closer to 2D than 3D.
+**Full voxel.** The world is a 3D voxel grid throughout: terrain, walls, destructible furniture, and props are voxels with real volume. Characters are voxel-part models (see Part 2) — chunky, readable silhouettes built from a handful of colored boxes, animated by moving the boxes.
 
-This visual language is distinctive in the deckbuilder genre (most deckbuilders are flat 2D) and well-suited to the destruction mechanics — voxel walls have real volume, can be visibly broken, and rubble can pile and become traversable terrain.
+**Camera: snap-rotate, four angles.** The camera orbits the player at a fixed tilt (start at ~50° from horizontal; tune on device) and a fixed distance, with smooth follow. Yaw is locked to the four cardinal diagonals; the player rotates it in 90° steps via two on-screen buttons (bottom corners above the HUD) or Q/E on desktop. Rotation tweens over ~250ms. All world readability must hold at all four angles — this constrains room design (Part 2).
 
-**No external asset packs in v1.** All art is programmer art: voxel terrain rendered with material-based colors, procedurally drawn billboard sprites for characters. The aesthetic decision (what art style to commit to) is deferred until the gameplay is validated. See the open questions doc for the eventual decision tree.
+**Occlusion handling:** when wall voxels sit between the camera and the player, the affected chunks fade to ~25% opacity (swap to a transparent material variant per chunk). Test whether the chosen tilt makes this rare; implement the fade regardless, it will matter in tall rooms.
+
+**No external asset packs in v1.** All art is programmer art: material-colored voxels, data-defined voxel characters. Committing to a final aesthetic is deferred until gameplay is validated.
 
 ### Voxel scale
 
-Movement and spell shapes (cones, spheres, projectiles) are continuous floats — *not* tied to any coarser grid. The voxel grid is the only grid in the game, and voxels are the unit of destruction and the unit the cellular automata operate on. Procgen carves rooms, corridors, and props directly into voxels. There is no separate "logical cell" or "tile" concept that the runtime sees.
-
-The prototype settled on these dimensions after early playtesting:
+Movement and spell shapes (cones, spheres, projectiles) are continuous floats — *not* tied to any coarser grid. The voxel grid is the only grid in the game: the unit of destruction, the unit the cellular automata operate on, and the unit templates are authored in.
 
 | Thing | Voxels |
 |---|---|
@@ -43,28 +50,33 @@ The prototype settled on these dimensions after early playtesting:
 | Walls | 14 tall, 3 thick |
 | Doorways | ≥7 wide, ≥11 tall |
 | Pillars | 3×3 shaft, 5×5 capital |
-| Furniture / props | 2-7 per side (crate, altar, statue) |
+| Furniture / props | 2–7 per side |
 | Corridors | ≥4 wide |
+| Step-up height (walkable) | ≤2 |
+| Platform heights | 3–6 above room floor |
 
-These set the implicit "1 voxel ≈ 0.2m" mapping. The numbers will tune over time but the relative ratios are the design's anchor — anything taller/larger than the player towers; anything 2-3 voxels is hand-prop scale.
+Implicit mapping: 1 voxel ≈ 0.2m. Ratios are the anchor; absolute numbers can tune.
 
----
-**2.5D Pokemon-style voxel.** Fixed-angle camera tilted ~50° from vertical, smooth follow on the player. Walls extrude as 3D voxel geometry from a 2D logical grid. Characters and props are billboarded 2D sprites that always face the camera. Art pipeline stays close to 2D; rendering is 3D.
+### Light verticality (new)
 
-**No external asset packs in v1.** All visuals are programmer art: voxels rendered as colored cubes with material-based shading, characters as procedurally-drawn billboard sprites. The aesthetic decision (real assets, what style) is deferred until gameplay is validated. Do not add asset packs to the project without explicit user direction.
+Rooms may vary ground height per cell:
+
+- **Platforms / ledges** — walkable surfaces 3–6 voxels above the room floor, reached by ramps or step-stacks (≤2 voxel steps). Good for loot perches, enemy vantage points, and pouring hazards downhill (water and oil flow downhill once the CA is in — verticality and materials multiply each other).
+- **Pits** — cells with no ground. Falling into a marked *descent pit* drops the player to the next floor (the forced-descent mechanic). Unmarked low areas are just sunken floor within the room.
+- **Rule: connectors are always at ground level.** Rooms connect to corridors on the y=1 walking plane only. No multi-tier room-to-room connections in v1. This keeps the assembler and collision simple while verticality still pays off inside rooms.
+
+Movement collision generalizes from "flat plane" to a **per-column walkable-height map** derived from the grid: the player stands on the highest solid voxel in a column, can step up ≤2, and can drop any height (no fall damage in v1). This replaces the fixed y=1..10 body-box check.
 
 ## Core gameplay loop
 
 1. Player begins a run with a starter deck on Floor 1
-2. Explore the floor in real-time, fighting encounters as they're triggered
-3. Combat is turn-based, with cards played from hand, environment ticking between turns
+2. Explore the floor in real time, fighting encounters as they're triggered
+3. Combat is turn-based, cards played from hand, environment ticking between turns
 4. Win combat → loot rewards (cards, currency, items)
-5. Find stairs (or fall in a pit) → descend to the next floor
-6. Each floor's biome shifts (caves → ruins → deeper levels) with different procgen rules, materials, aesthetic
+5. Find stairs (or fall in a descent pit) → next floor
+6. Each floor's biome shifts (caves → ruins → deep) with different template families, materials, palette
 7. Run ends on death or completion of the final floor
-8. Meta-progression unlocks for next run (deferred — exact form TBD)
-
-Standard roguelike-deckbuilder loop. Real-time exploration plus turn-based combat plus deep environmental interaction is the differentiator.
+8. Meta-progression unlocks for the next run (deferred — exact form TBD)
 
 ## Card system
 
@@ -74,167 +86,268 @@ Cards are the player's vocabulary in both combat and exploration.
 
 Cards combine three orthogonal properties:
 
-- **Shape** — targeting template (radius, cone, line, self, area). Drives how the player aims.
-- **Element** — material interaction (fire, frost, force, earth, shadow, arcane). Drives what materials it affects.
-- **Modifier** — additional rules (pierce armor, apply poison, draw cards, transform terrain, persistent effects).
+- **Shape** — targeting template (radius, cone, line, self, area)
+- **Element** — material interaction (fire, frost, force, earth, shadow, arcane)
+- **Modifier** — additional rules (pierce armor, apply poison, draw cards, transform terrain, persistent effects)
 
-A card is a data object: `{shape: "radius_3", element: "fire", modifier: "ignite_oil"}`. This grammar lets us describe many cards as data rather than code, which makes the system extensible and balanceable.
+A card is a data object: `{shape: "radius_3", element: "fire", modifier: "ignite_oil"}`. Many cards are described as data rather than code, which keeps the system extensible and balanceable.
 
 ### Casting
 
-In combat: cards cost mana, played from a hand drawn each turn from the deck.
+In combat: cards cost mana, played from a hand drawn each turn.
 
-Out of combat: cards can be cast freely against the environment for exploration, testing, or fun. No combat resources used. This is mechanically important — blowing a hole in a wall to reach a hidden room is a valid strategy and must be possible without combat penalty.
+Out of combat: cards can be cast freely against the environment. No combat resources used. This is mechanically important — blowing a hole in a wall to reach a hidden room is a valid strategy and must be possible without penalty. **Secret rooms in the assembler (Part 2) exist specifically to reward this.**
 
 ### Hand size
 
-Target ~5-7 cards in hand. Fits a fan UI on a portrait mobile screen and matches deckbuilder conventions.
+Target ~5–7 cards. Fits a fan UI on a portrait screen and matches deckbuilder conventions.
 
 ## Environment & material system
 
-This is the load-bearing distinctive feature of the game. Environments are systems the player manipulates, not backdrops.
+The load-bearing distinctive feature. Environments are systems the player manipulates, not backdrops. **Room templates are authored around material scenarios** — this is where "interesting to explore" actually comes from in this game (Part 2).
 
 ### Voxel terrain
 
-The world is a 3D grid of voxels. Each voxel has:
+Each voxel has:
 - A **material** (stone, dirt, water, oil, lava, ice, wood, gas)
 - An **HP** value if destructible
 - Optional **state** flags (on fire, frozen, lit)
 
-Procgen carves walls, floors, corridors, and props directly into the voxel grid. There is no intermediate logical-cell representation the runtime sees — rooms are placed and walls are 3 voxels thick because we picked 3, not because some upstream tile got expanded. Materials drive both gameplay (interactions) and rendering (color, lighting).
-Walls extrude vertically from the 2D logical grid. A "stone wall" cell becomes a column of stone voxels of fixed height. A "floor" cell is empty above a single floor voxel. Materials drive both gameplay rules and rendering colors.
-
 ### Destruction
 
-Voxels can be destroyed at runtime. A fireball removes voxels in a sphere around impact. The wall now has a 3D hole. Voxels above the hole, no longer supported, can fall as physics debris (rigid bodies). Settled debris becomes rough terrain that slows movement.
-
-The destruction model is *the* visceral payoff. Every destruction event should feel weighty and consequential.
+Voxels can be destroyed at runtime. A fireball removes voxels in a sphere; unsupported voxels above fall as physics debris (cannon-es rigid bodies); settled debris becomes rough terrain. Destruction is *the* visceral payoff — every event should feel weighty.
 
 ### Material interactions
 
-A small cellular automata layer runs on top of the voxel grid for material behaviors:
+A cellular-automata layer runs on the voxel grid:
 
-- **Fire** propagates to adjacent flammable materials (oil, wood, vegetation), consumes them over N ticks, then burns out
-- **Water** flows downhill across voxel terrain, finds low spots, pools
-- **Oil** is flammable and pools like water, flows slower
-- **Gas** rises, drifts, dissipates over time, blocks line of sight
-- **Lava** glows, spreads slowly, ignites flammables on contact
-- **Ice** can be melted by heat, frozen by cold, becomes water when destroyed
+- **Fire** propagates to adjacent flammables (oil, wood), consumes over N ticks, burns out
+- **Water** flows downhill, pools
+- **Oil** flammable, pools, flows slower
+- **Gas** rises, drifts, dissipates, blocks line of sight
+- **Lava** glows, spreads slowly, ignites flammables
+- **Ice** melts under heat, becomes water when destroyed
 
-Simple individually, emergent in combination. Oil + spark = fire. Frost + lava = steam (vision-blocking gas). Water + electric spell = chained damage.
+Simple individually, emergent in combination. Verticality feeds this: liquids seek low ground, gas fills high spaces.
 
 ### Tick model
 
-The environment ticks between turns in combat. Player turn → environment tick → enemy turn → environment tick. Each tick is one CA pass plus settling physics for any falling debris.
-
-Out of combat (free roam), the environment ticks at a slower fixed rate (target: once per second) so material effects continue evolving while the player moves.
+In combat: player turn → environment tick → enemy turn → environment tick. Out of combat: environment ticks at a fixed slow rate (target: 1/sec).
 
 ## Floors & progression
 
-### Floor structure
+Each floor is a self-contained assembled dungeon (Part 2 covers assembly). Floors connect only via stairs and descent pits. The engine holds the current floor in memory; everything else is unloaded.
 
-Each floor is a self-contained procgen dungeon. Floors connect only via stairs/pits. The engine holds the current floor (and possibly a cached previous floor) in memory; everything else is unloaded. This bounds memory and rendering predictably.
+Target floor size: 200–400 voxels per side holding 12–25 rooms, navigable in 3–5 minutes. Early stages use smaller floors (≈128 voxels, 5–8 rooms) until chunked meshing lands.
 
-Target floor size: ~200-400 voxels per side at the established scale, holding 20-60 rooms with the room/corridor mix described above. Navigable in 3-5 minutes by an experienced player. Smaller floors (96 voxels per side, 6-10 rooms) are appropriate for the early prototype stages before chunked meshing is in.
+**Biomes** group floors. Each biome defines: palette, material distribution, the template families the assembler may draw from, decorator settings, and (eventually) enemy roster and loot tables. v1 biomes: Caves (1–3), Ruins (4–6), Deep (7–9), boss arena on 10.
 
-### Biomes
-
-Floors group into biomes. Each biome has:
-- Color palette
-- Material distribution (caves favor moss/water; ruins favor stone/dust; sewers favor water/sludge)
-- Procgen rules (caves are organic; ruins are rectangular; sewers are linear)
-- Special features (lava in deep biomes, ice up top, etc.)
-- (Eventually) enemy types and loot tables
-
-v1 biomes: Caves (1-3), Ruins (4-6), Deep (7-9), boss arena on Floor 10. Adjustable once gameplay is felt.
-
-### Inter-floor transitions
-
-- **Stairs** — voluntary descent. Player chooses when to go down.
-- **Pits** — forced descent. Falling drops you to the next floor with no preparation. Can be exploited deliberately (cast wall-break on the floor to skip ahead).
-- (Possible) **multiple staircases** on some floors leading to different next biomes for replayability.
-
-Player carries deck and HP between floors. Each new floor is freshly generated.
+**Transitions:** stairs (voluntary), descent pits (forced/exploitable). Player carries deck and HP between floors.
 
 ## Combat
 
-Detailed combat design is **deferred** until the environment and exploration prototype is working. Combat design will inform and be informed by what's actually possible in the world.
-
-### What's pinned for combat
+Detailed combat design remains **deferred** until exploration and materials are proven. Pinned:
 
 - **Turn-based**, environment ticks between turns
-- **Symmetric agent rules** — enemies have decks and hands and play cards under the same rules as the player. "AI" is just deck composition + play heuristic, not bespoke behavior trees. Load-bearing simplification.
-- **Movement during combat is constrained** — limited movement points per turn, undo button available since it's turn-based
-- **BG3-style template targeting** for spells, projected onto the ground plane
+- **Symmetric agent rules** — enemies have decks and play cards under player rules; "AI" is deck composition + play heuristic
+- **Constrained movement in combat** — limited movement per turn, undo available
+- **BG3-style template targeting** projected onto the walkable surface (not a flat plane — templates conform to the height map)
 
-### Open combat questions (defer until prototype works)
-
-- How combat is initiated (line of sight? proximity? scripted encounters?)
-- Action economy (mana? AP? both?)
-- Whether movement in combat is a card play or a free action
-- Persistence between encounters
+Open combat questions stay open (action economy, initiation, movement-as-card, persistence between encounters).
 
 ## Mobile UI
 
-Designed for portrait mode, one-handed where possible.
+Portrait, one-handed where possible.
 
-### Free-roam exploration
-
-- **Floating virtual d-pad** — appears under left thumb on touch, analog magnitude (closer to center = slower walk), disappears on release. No fixed position; accommodates any grip.
-- **Card fan** at bottom-right shows player's hand as a fan of small previews
-- **Drag thumb across fan** → card under thumb pops up and grows for readability
-- **Drag thumb upward past a threshold** → card lifts into aiming mode, fan dims, spell template appears at finger
-- **Release in aim mode** → cast at target position (offset above finger so it isn't blocked by thumb)
-- **Drag back below threshold before release** → cancel
-- **For non-targeted cards** (heal, draw, etc.) → crossing the threshold *is* the cast, no aim step
-
-This gesture matches Hearthstone and MTG Arena. Players muscle-memory it within minutes.
-
-### Combat UI
-
-Camera locks to combat area when combat begins. D-pad becomes movement-card play (limited per turn) instead of free roam. Specifics deferred until combat is implemented.
-
-### HUD
-
-Top bar: HP, mana, current floor, enemy intent icons during combat. Always visible, ~10% screen height.
-
-### Targeting offset (load-bearing detail)
-
-When aiming a spell, the targeting cursor must be offset ~60-80px ABOVE the finger position. Otherwise the player's thumb covers what they're aiming at. This is the single most important "feels good vs. feels bad" detail in mobile aiming. Don't forget it.
+- **Floating virtual d-pad** — appears under left thumb, analog magnitude, disappears on release. **Directions are camera-relative** and re-map instantly on snap-rotate.
+- **Camera rotate buttons** — two small buttons (⟲ / ⟳), bottom corners. Desktop: Q/E.
+- **Card fan** bottom-right; drag across to preview, drag up past threshold to lift into aim mode, release to cast, drag back to cancel. Non-targeted cards cast on crossing the threshold. (Hearthstone/Arena convention.)
+- **Aiming under snap-rotate** — the aim point raycasts from the finger through the camera onto the walkable surface. Because yaw is fixed during aiming (lock rotation while a card is lifted), drag-up always means "away from the player on screen."
+- **Targeting offset (load-bearing)** — the cursor sits ~60–80px ABOVE the finger so the thumb doesn't cover the target. Do not forget this.
+- **HUD** top bar: HP, mana, floor, enemy intent during combat. ~10% screen height.
 
 ## Game feel toolkit
 
-Effects are first-class. Every spell cast should feel weighty. The toolkit, ordered by ROI:
-
-1. **Particle system** — sparks, smoke, embers, debris, sparkles, trails, bursts. ~500 particles max active. Hand-rolled.
-2. **Screen shake** — trauma-based model (shake intensity = trauma², trauma decays over time, impacts add trauma). Shake the camera, not the world.
-3. **Audio with pitch variation** — every sound effect plays with ±10% random pitch variation to avoid fatigue. Layer 2-3 sounds per impact (low rumble + mid impact + high sparkle). Use Howler.js.
-4. **Hit-stop / freeze frames** — on big spell impacts, freeze the entire game for 50-100ms before the explosion plays out. Single most underused tool in indie games. Transforms heavy hits.
-5. **Screen flashes** — brief full-screen color overlay (white, red, blue) that fades over 100-200ms on impact. Subtle for small spells, aggressive for big ones.
-6. **Haptics** — `navigator.vibrate(50)` on Android browsers. iOS Safari doesn't support, accept that.
-7. **Squash & stretch** — sprites squash on impact axis, stretch when moving fast. Deferred until proper sprite animation exists.
-8. **Camera punch** — 2-5% zoom-in for ~100ms on big impacts. Combined with shake, makes hits feel weighty.
-9. **Slow-build telegraphs** — for impactful spells, delay the actual effect by a fraction of a second. Anticipation makes the payoff feel bigger.
-10. **Chromatic aberration** — brief red/blue channel offset on impact (~80ms). Use sparingly — only critical hits.
-
-Effects are triggered by game events (`{type: "ExplosionAt", x, y, magnitude}`), not by direct calls in the game logic. The reducer stays pure; the render layer subscribes to events and produces effects.
+Effects are first-class, triggered by reducer-emitted events (`{type:"ExplosionAt", ...}`), never by direct calls from game logic. Ordered by ROI: particles (~500 cap, pooled) → trauma-based screen shake → pitch-varied layered audio (Howler) → hit-stop (50–100ms) → screen flashes → haptics (`navigator.vibrate`, Android only) → part squash-and-stretch (voxel characters make this easy — scale the parts) → camera punch → slow-build telegraphs → sparing chromatic aberration.
 
 ---
 
-# Part 2: How we're building it
+# Part 2: The content pipeline
+
+This part is new in v2 and is the heart of the revamp. Read it carefully.
+
+## Design-time content vs runtime generation
+
+The v1 failure was putting all design responsibility in a runtime algorithm. The v2 split:
+
+- **Design time:** Claude Code sessions author content — room templates and character definitions — as JSON data files committed to the repo. Each file is shaped with intent: this room is built around an oil pool spanning the path; this enemy's silhouette reads as "ranged threat." Content is generated in **batches**, then **curated by the developer** in a debug viewer. Rejected content is deleted or revised. Only curated content ships.
+- **Runtime:** a deliberately *dumb* assembler stitches curated templates into floors. It handles topology, placement, corridors, validation, and seeding materials — it makes no aesthetic decisions. All the taste lives in the template library.
+
+**The developer's role is editor, not author.** Claude authors; the developer walks each room in the viewer, culls, and critiques; Claude revises. No template enters the shipping pool without having been walked.
+
+### Rules for Claude Code sessions authoring content
+
+1. Every template must be built around **at least one specific idea** — a material scenario, a traversal wrinkle, an ambush geometry, a landmark. Write the idea in the template's `notes` field in one sentence. If you can't state the idea, the room is filler; don't commit it.
+2. **Self-review before committing** a batch: for each room, state at all four camera angles whether the connectors are visible on approach, whether the idea reads within 2 seconds of entering, and whether any geometry violates the scale table. Cull your own weakest rooms before the developer sees them.
+3. Batch size: **5–10 rooms** per session. Small batches keep the review loop fast.
+4. Never edit a template the developer has approved without being asked. Revisions target rejected/flagged templates only.
+5. Variety across a batch beats polish on one room. Vary size, shape, idea category, and role.
+
+## Room templates
+
+### Format
+
+Templates live in `/data/rooms/<family>/<id>.json`. The core spatial encoding is a **2D character grid with a legend** — compact, diffable, and directly authorable/reviewable as text. Per-cell ground height carries the light verticality; a shared **prop vocabulary** (parameterized builders: pillar, crate stack, altar, statue, ramp, brazier…) places 3D detail without encoding full 3D volumes.
+
+```json
+{
+  "id": "oil_cistern_crossing",
+  "version": 1,
+  "family": "ruins",
+  "roles": ["combat", "hazard"],
+  "difficulty": 2,
+  "size": { "w": 25, "d": 21 },
+  "legend": {
+    "#": { "wall": "stone", "wallH": 14 },
+    ".": { "ground": "stone", "groundH": 1 },
+    "o": { "ground": "stone", "groundH": 1, "pool": "oil", "poolDepth": 1 },
+    "P": { "ground": "stone", "groundH": 4 },
+    "r": { "ramp": true, "from": 1, "to": 4 },
+    "v": { "pit": "sunken", "groundH": 0 }
+  },
+  "cells": [
+    "#########################",
+    "#.......................#",
+    "#..PPPP.........PPPP....#",
+    "#..PPPP..ooooo..PPPP....#",
+    "#..rr....ooooo....rr....#",
+    "#........ooooo..........#",
+    "#.......................#",
+    "#########################"
+  ],
+  "props": [
+    { "type": "pillar", "x": 6, "z": 9 },
+    { "type": "brazier", "x": 12, "z": 3, "lit": true },
+    { "type": "crate_stack", "x": 19, "z": 14, "material": "wood" }
+  ],
+  "connectors": [
+    { "side": "W", "offset": 8, "width": 7 },
+    { "side": "E", "offset": 8, "width": 7 }
+  ],
+  "markers": [
+    { "type": "enemy_spawn", "x": 4, "z": 4, "tier": "normal", "note": "vantage on platform" },
+    { "type": "loot", "x": 20, "z": 4, "quality": "minor" }
+  ],
+  "decorators": [
+    { "type": "roughen_walls", "strength": 0.3 }
+  ],
+  "notes": "Oil pool spans the direct W–E path; a lit brazier sits one careless fireball away. Platforms flank the pool for archers. Safe route is the long way around or up over the platforms."
+}
+```
+
+Field semantics:
+
+- `cells` — exactly `d` strings of exactly `w` characters; every character must exist in `legend`. Row 0 is the room's north edge (−z).
+- `legend` cell spec keys: `wall`+`wallH` (solid column, material), `ground`+`groundH` (walkable top surface), `pool`+`poolDepth` (material-filled voxels resting on ground — inert until the CA stage lands, still author them now), `ramp` `from`→`to` (auto-carved stepped incline; direction inferred from adjacent heights), `pit` (no ground; `"descent"` pits drop to the next floor, `"sunken"` are in-room low areas), `bridge`+`bridgeH` (a 1-voxel-thick destructible walkable deck at height `bridgeH`, default material wood, override via `bridgeMat`; combine with `pit` or `pool` in the same cell spec for the drop or hazard beneath — this is how "wooden bridge over a lava chasm" is authored).
+- `connectors` — `side` ∈ N/S/E/W, `offset` = start cell along that edge, `width` ≥ 7. The doorway cells must be ground-level (`groundH: 1`) and the opening ≥11 tall. Rooms need 1–4 connectors; the assembler may leave extras sealed (it fills unused doorways with wall, flush).
+- `markers` — semantic spawn points the runtime consumes: `enemy_spawn`, `loot`, `player_spawn` (spawn-role rooms), `stairs_down`, `secret_tell` (see secret rooms).
+- `decorators` — named deterministic passes the assembler runs after stamping, parameterized per template, seeded from the floor seed: `roughen_walls` (light CA erosion of wall tops/faces — **this is where the v1 3D wall-sculpting code gets salvaged**, demoted from level generator to texture pass), `scatter_rubble`, `moss` (material tinting), etc.
+- `roles` — what the assembler may use this room as: `spawn`, `stairs`, `combat`, `treasure`, `hazard`, `secret`, `arena`, `corridor_junction`.
+- `family` — biome family: `caves`, `ruins`, `deep`, plus `any`.
+
+**Rotation:** the assembler may rotate any template 0/90/180/270° when placing it (grids and connector sides rotate trivially). Templates are authored once, in one orientation, but must *read* acceptably at all four camera yaws — since the assembler also rotates, effectively every room must work from every angle. Avoid designs that only make sense from one approach.
+
+### What makes a room worth committing
+
+Priority order for template ideas — this is the answer to "levels aren't fun to explore":
+
+1. **Material set pieces** (the game's soul): an oil cistern crossing the path; a flooded chamber to drain or freeze; a lava chasm with a wooden bridge; a gas-filled vault; icicle ceilings over enemies. Author the scenario, not just the pool.
+2. **Traversal wrinkles** (verticality): a loot perch requiring a ramp detour; a sunken arena you fight up out of; a descent pit dare.
+3. **Combat geometry**: chokepoints, flanking loops around pillars, vantage platforms, destructible cover.
+4. **Landmarks**: a statue, an altar, a collapsed colonnade — something that makes *this* room recognizable so the floor stops feeling homogeneous.
+5. **Secrets**: rooms with `roles: ["secret"]` attach to a neighbor with **no corridor** — a 3-thick destructible wall and a `secret_tell` marker (crack props, a rubble hint) on the visible side. Blowing a hole in the wall is the intended entry. This mechanizes the doc's oldest promise.
+
+### The caves family and the old CA code
+
+Organic cave rooms remain in the game — as **one template family**, not the whole generator. The v1 2D CA cave code gets repurposed into a **design-time generator tool**: a browser page at `/tools/cavegen.html` (static, no build step) that runs the CA with adjustable parameters, previews the result, and emits template JSON to copy into `/data/rooms/caves/`. Claude generates candidates with it (or replicates it in-session), then dresses them — connectors, height variation, pools, props, markers — before committing. Caves become curated rooms like everything else. Delete the `claude/procgen-dungeon-design-Sq4hh` branch once the salvage (CA functions → cavegen tool + `roughen_walls` decorator) is done.
+
+## The assembler (runtime)
+
+`/sim/assemble.js` — pure, seeded, no aesthetic judgment. Pipeline per floor:
+
+1. **Plan topology.** From the biome config and floor number: room count, critical-path length (spawn → stairs), branch count and depth, required roles (1 spawn, 1 stairs, N combat, ≥1 treasure, 0–1 secret, hazard quota). Output: an abstract graph of room slots with role tags and edges.
+2. **Select templates.** For each slot, pick a matching template (family + role + difficulty band) from the curated library, seeded. Avoid repeating a template within a floor; if the library forces repetition, allow at distance.
+3. **Place.** Lay rooms out on a coarse placement grid via the graph (spatial embedding: place the critical path as a meandering spine, hang branches off it), choosing rotations so connectors face their edges. Maintain ≥6 voxels of solid rock between room bounding boxes.
+4. **Route corridors.** Connect assigned connector pairs with L-shaped (fallback: A* on the coarse grid) corridors, ≥4 wide, 3-thick walls, ground level. Corridor length between rooms: 8–30 voxels — corridors are palate cleansers, not content.
+5. **Stamp.** Write floor slab, room templates (legend → voxels, props via the prop vocabulary, pools as material voxels), corridors, then seal unused connectors.
+6. **Decorate.** Run each room's decorator passes, seeded from the floor seed. Apply biome palette/material substitutions.
+7. **Attach secrets.** Place secret rooms flush against a chosen host room's wall; stamp the shared wall as destructible; place the tell.
+8. **Validate.** Flood-fill the walkable height map (step ≤2) from spawn; require stairs and every non-secret room reachable, every marker on walkable ground. On failure, reroll with the next seed (bounded retries, then relax constraints). Determinism rule: same floor seed → same floor, always.
+
+The assembler consumes only `/data/rooms/**` and biome configs. It never invents geometry beyond corridors and sealing.
+
+## Voxel characters
+
+### Format
+
+Characters live in `/data/characters/<id>.json`. A character is a set of rigid voxel-box **parts** in a parent hierarchy, plus parameters for a **shared procedural animation system**.
+
+```json
+{
+  "id": "ember_cultist",
+  "notes": "Ranged fire caster. Silhouette: tall asymmetric hood, one oversized sleeve. Reads as 'keep your distance.'",
+  "heightVoxels": 10,
+  "palette": { "robe": "#7a2f33", "trim": "#d8a24a", "skin": "#e8cfa8", "ember": "#ff6a00" },
+  "parts": [
+    { "name": "torso", "size": [4, 5, 2], "offset": [0, 3, 0], "color": "robe" },
+    { "name": "head",  "size": [3, 3, 3], "offset": [0, 5, 0], "pivot": [0, -1, 0], "parent": "torso", "color": "skin" },
+    { "name": "hood",  "size": [4, 4, 4], "offset": [0, 1, -0.5], "parent": "head", "color": "robe" },
+    { "name": "armL",  "size": [1, 4, 1], "offset": [-2.5, 4, 0], "pivot": [0, 2, 0], "parent": "torso", "color": "robe" },
+    { "name": "armR",  "size": [2, 4, 2], "offset": [3, 4, 0], "pivot": [0, 2, 0], "parent": "torso", "color": "trim" },
+    { "name": "legL",  "size": [1.5, 3, 1.5], "offset": [-1, 0, 0], "pivot": [0, 3, 0], "color": "robe" },
+    { "name": "legR",  "size": [1.5, 3, 1.5], "offset": [1, 0, 0], "pivot": [0, 3, 0], "color": "robe" }
+  ],
+  "anim": {
+    "idleSway": 0.06, "idleBobHz": 0.6,
+    "walkBob": 0.18, "armSwingDeg": 25, "legSwingDeg": 30,
+    "castLunge": 0.35, "castArm": "armR",
+    "hitRecoil": 0.3, "deathStyle": "crumble"
+  }
+}
+```
+
+- `size`/`offset` in voxels; `offset` is relative to the parent's pivot (or the ground origin for parentless parts). `pivot` is the part's rotation point relative to its own offset.
+- Parts render as `InstancedMesh` boxes at world voxel scale. No per-voxel geometry inside a part — a part is one box. Detail comes from part count (keep to 6–12) and palette.
+- **Animation is code, written once** in `/render/characters.js`: a standard clip set — `idle`, `walk`, `cast`, `hit`, `death` — implemented as procedural transforms (sin bobs, pivot swings, lunges, squash-and-stretch on the whole hierarchy) driven by the `anim` parameters. Characters differ by data, never by bespoke animation code. `deathStyle: "crumble"` detaches parts as short-lived rigid bodies via cannon-es — thematically perfect and nearly free.
+- The player character is just another definition (`/data/characters/player.json`).
+
+### Character authoring rules
+
+Same batch-and-curate loop as rooms. Additional criteria for self-review: silhouette must be distinguishable from every other committed character at gameplay camera distance; palette must separate from all biome palettes; role must read from shape (melee = forward mass, ranged = staff/sleeve, tank = wide). The developer reviews characters in the same debug viewer (`?char=<id>` shows a turntable + all clips).
+
+## The debug viewer
+
+`/tools/viewer.html` — a static page sharing the game's render code. This is **the curation instrument** and gets built before any content batch:
+
+- `?room=<id>` — load one template: walk it with normal controls, all four camera angles, regenerate decorators with a new seed on tap, overlay toggles for connectors/markers/heights.
+- `?char=<id>` — turntable of a character definition cycling all animation clips.
+- `?floor=<seed>` — full assembler output for a seed, with a minimap overlay of the topology graph.
+- A room-list index page for batch review, with a per-room approve/reject note the developer keeps (a simple checklist in `/data/rooms/REVIEW.md` is fine — no backend).
+
+---
+
+# Part 3: How we're building it
 
 ## Stack
 
-- **Three.js** for 3D rendering — loaded from CDN, no build step
-- **cannon-es** for 3D rigid body physics — debris, projectiles. Loaded from CDN.
-- **Howler.js** for audio — loaded from CDN
-- **Vanilla JavaScript** with ES modules — no TypeScript, no bundler, no build step
-- **JSDoc comments** for type-like documentation when useful
-- **GitHub Pages** for hosting — serves directly from `main` branch
+- **Three.js** — 3D rendering, CDN importmap, no build step
+- **cannon-es** — rigid-body debris, projectiles, character death crumble
+- **Howler.js** — audio
+- **Vanilla JavaScript, ES modules** — no TypeScript, no bundler, no build step, ever
+- **JSDoc** for type-ish documentation where useful
+- **GitHub Pages** serving `main` directly
 
-This stack supports the developer's iteration workflow: Claude Code commits to GitHub, GitHub Pages serves the result, developer tests in mobile browser. No local tooling required.
-
-### CDN URLs to use
+Workflow this must support: Claude Code commits to GitHub → Pages serves → developer tests in a mobile browser. No local tooling.
 
 ```html
 <script type="importmap">
@@ -249,254 +362,182 @@ This stack supports the developer's iteration workflow: Claude Code commits to G
 </script>
 ```
 
-Use this importmap (or equivalent CDN paths) in `index.html`. Pin specific versions for reproducibility.
+Pin versions. JSON content files load via `fetch` relative to the page (works on Pages and `python3 -m http.server`).
 
-## Architectural rules (load-bearing)
+## Architectural rules (load-bearing, non-negotiable)
 
-These rules exist to enable a smooth migration to networked multiplayer when/if it's added later. They are non-negotiable. Following them costs maybe 10-20% extra thinking during development; ignoring them means a future rewrite. Any session working on this project must follow them.
+These enable a clean future multiplayer migration and, more immediately, make the game testable and deterministic. Every session must follow them.
 
-### 1. Pure functional reducer
-
-All game state mutations go through a single function: `(state, action) => newState`. The reducer is pure. No side effects. No DOM access, no audio playback, no `console.log`, no `Math.random()`, no `Date.now()`, no fetches. If it's not in the inputs, it cannot influence the output.
-
-This rule means the reducer can be run on a server identically to in the browser. It also means the simulation is testable, replayable, and debuggable.
-
-### 2. Actions as serializable messages
-
-Every state change is a typed action with a serializable payload. Examples:
-
-```js
-{type: "MoveAgent", agentId: "player", direction: {x: 1, y: 0}}
-{type: "PlayCard", agentId: "player", cardId: "fireball_1", target: {x: 12.5, y: 8.3}}
-{type: "EnvironmentTick"}
-```
-
-Never mutate state directly anywhere outside the reducer. Never use ad-hoc objects without a `type` discriminator. This makes the action stream loggable, replayable, networkable.
-
-### 3. Seeded RNG
-
-Randomness lives in a seeded PRNG that is part of the game state. Use `mulberry32` or equivalent. The reducer advances the seed when it draws a random number; it never calls `Math.random()`.
-
-```js
-// Pure
-function reduce(state, action) {
-  if (action.type === "RollDamage") {
-    const { value, nextSeed } = rng(state.seed);
-    return { ...state, lastDamage: value, seed: nextSeed };
-  }
-}
-```
-
-This makes the game deterministic. Same state + same action sequence → same result, every time. Required for any future multiplayer or replay system.
-
-### 4. Time as state, not wall clock
-
-Game logic uses turn numbers and tick counts, not real time. The renderer can use real time (animations, particle motion, audio timing). The simulation cannot.
-
-If a card has a "lasts 3 turns" effect, that's tracked as `expiresAtTurn: 47` in state, not as a wall-clock timer.
-
-### 5. Rendering reads state, never mutates it
-
-The render layer is a function of game state. It can compute effects, run animations, play audio — all driven by state and events. It cannot directly modify state. UI input creates actions, dispatched to the reducer.
-
-### 6. /sim imports nothing
-
-The single most important folder rule: nothing in `/sim` imports from anywhere else in the project. No `/render`, no `/ui`, no `/effects`, no DOM, no Three.js, no Howler. Just other files within `/sim` and pure data.
-
-If this holds, the simulation is portable to a Node server unchanged. If it doesn't, multiplayer migration is a rewrite.
+1. **Pure functional reducer.** All state mutation via `reducer(state, action) => newState` in `/sim/state.js`. No DOM, audio, `console.log`, `Math.random`, `Date.now`, or network inside `/sim`.
+2. **Actions as serializable messages.** Typed actions with JSON-serializable payloads. Nothing outside the reducer mutates state.
+3. **Seeded RNG.** `mulberry32` in `/sim/rng.js`; the reducer threads the seed. Same state + same actions = same result. The assembler obeys the same rule: same floor seed = same floor.
+4. **Time as state.** Turns and tick counts in the sim; wall-clock time only in the renderer. Fixed-timestep `Tick` actions bridge them in `main.js`.
+5. **Rendering reads state, never mutates.** Effects subscribe to reducer-emitted events.
+6. **/sim imports nothing outside /sim.** The single most important rule. Content JSON is loaded by `main.js` and passed *into* the sim as plain data — `/sim` never fetches.
 
 ## Folder structure
 
 ```
-/index.html              entry point, includes the importmap
-/main.js                 game loop, wires everything together
-/sim/                    PURE GAME LOGIC. Imports nothing else.
-  state.js               state shape + reducer
-  rng.js                 seeded mulberry32
-  cards.js               card definitions + resolution
-  materials.js           material rules + cellular automata
-  voxels.js              voxel grid mutations
-  events.js              event types emitted by reducer
-/render/                 reads sim state, never mutates
-  scene.js               three.js scene setup
-  voxel-mesh.js          voxel grid → mesh conversion
-  sprites.js             billboarded character/prop rendering
-  particles.js           particle effects
-  screen.js              camera, screen shake, flashes
-/ui/                     dispatches actions to sim
-  cardfan.js             card hand rendering + interaction
-  dpad.js                virtual d-pad
-  targeting.js           spell aim overlay
-  hud.js                 HP/mana/floor display
+/index.html               entry, importmap
+/main.js                  game loop; loads content JSON, wires sim/render/input
+/sim/                     PURE LOGIC. imports nothing outside /sim.
+  state.js                state shape + reducer
+  rng.js                  seeded mulberry32
+  voxels.js               voxel grid ops
+  walkable.js             per-column height map + movement rules
+  assemble.js             floor assembler (Part 2 pipeline)
+  templates.js            template JSON → stamp operations; prop vocabulary
+  decorators.js           roughen_walls, scatter_rubble, ... (seeded, pure)
+  materials.js            material rules + CA        (Stage 5)
+  cards.js                card grammar + resolution   (Stage 6)
+  events.js               event types emitted by reducer
+/render/
+  scene.js                three.js setup
+  voxel-mesh.js           chunked grid → mesh
+  characters.js           voxel-part characters + procedural clip set
+  camera.js               snap-rotate orbit, follow, occlusion fade, shake
+  particles.js
+/ui/
+  dpad.js                 camera-relative virtual d-pad
+  rotate.js               snap-rotate buttons
+  cardfan.js              (Stage 6)
+  hud.js
 /input/
-  touch.js               touch event → action translation
-  desktop.js             keyboard/mouse for desktop testing
+  touch.js  desktop.js  state.js
 /effects/
-  audio.js               Howler wrapper
-  easing.js              lerp + easing functions
-/procgen/
-  floor.js               floor generation pipeline
-  rooms.js               room placement
-  tunnels.js             corridor carving
-  biomes.js              biome rule definitions
-/data/                   game content as data
-  cards.js               all card definitions
-  materials.js           material properties
-  biomes.js              biome configs
-/assets/                 (empty for v1 — no external assets yet)
+  audio.js  easing.js
+/data/
+  rooms/<family>/*.json   room templates (curated library)
+  rooms/REVIEW.md         curation notes
+  characters/*.json       character definitions
+  biomes.js               biome configs (palette, families, quotas)
+  cards.js                (Stage 6)
+  materials.js
+/tools/
+  viewer.html             debug viewer (rooms, characters, floors)
+  cavegen.html            design-time CA cave-template generator
 ```
 
 ## Performance targets
 
-- **60fps** on phones from the last 4 years (iPhone 12+, Pixel 5+, Galaxy S20+)
-- **30fps acceptable** on phones 5-7 years old
-- Older phones explicitly out of scope
-
-Strategies:
-- Bounded floor size (no streaming, predictable cost)
-- Chunked voxel meshing (regenerate only affected chunks on destruction)
-- Instanced rendering for sprites (use Three.js InstancedMesh)
-- Conservative effects (no real-time shadows, no expensive post-processing)
-- Capped particle count (~500 max active)
-- Debris despawns after settling (~5 seconds) or freezes back into static voxels
-- Pool particle objects to avoid GC pressure
+- **60fps** on ~4-year-old phones (iPhone 12+, Pixel 5+); 30fps acceptable on 5–7-year-old devices; older out of scope.
+- Bounded floor size; **chunked meshing** (16³ chunks, rebuild only affected chunks on destruction — chunk plumbing already exists in `voxels.js`); `InstancedMesh` for character parts and repeated props; no real-time shadows or heavy post; ~500 particle cap, pooled; debris despawns or re-freezes to static voxels after ~5s.
 
 ## Coding conventions
 
-- ES modules with `export`/`import`. No CommonJS, no `require()`.
-- Vanilla JavaScript. No TypeScript. JSDoc comments for type hints when useful.
-- Modules of moderate size (200-500 lines). Don't make hundreds of tiny files.
-- Pre-allocate arrays/objects in hot loops. Pool particles. Avoid GC pressure on mobile.
-- Prefer `for` loops over `forEach`/`map` in hot paths (perf-sensitive code).
-- Comment why, not what. Don't comment self-explanatory code.
+ES modules only. Vanilla JS, no TypeScript. Modules of moderate size (200–500 lines). Pre-allocate in hot loops; prefer `for` over `forEach`/`map` in hot paths; pool objects. Comment *why*, not *what*.
 
 ---
 
-# Part 3: What to build first
+# Part 4: What to build next
 
 ## Scope discipline
 
-The history of this design conversation included repeatedly expanding scope toward larger ambitions (multiplayer, MMO, social features, more biomes, real assets, etc.). All those ambitions are **explicitly deferred**. v1 is a single-player roguelike deckbuilder with bounded scope.
+The design history of this project repeatedly expanded toward larger ambitions. All remain **explicitly deferred**. v1 is a single-player roguelike deckbuilder with bounded scope.
 
-### What's explicitly NOT in v1 (do not build these even if asked unless the developer specifically overrides)
+### Explicitly NOT in v1 (do not build even if asked, unless the developer specifically overrides)
 
-- Multiplayer of any kind
-- Persistent world / MMO features
-- Social features (chat, friends, trading)
-- Leaderboards
-- Multiple character classes
-- Account systems / cloud saves
-- More than 3 biomes
-- Custom card creation by players
-- Daily challenges / seeded runs
-- Real asset packs (programmer art only)
-- 3D character models (billboarded sprites only)
-- Free-rotating camera (fixed angle only)
-- Verticality within a single floor (floors are 2D extruded into 3D)
-- Pet system / followers
-- Crafting
-- Inventory beyond cards (no equipment slots, no consumables that aren't cards)
+- Multiplayer of any kind; persistent world / MMO features; social features; leaderboards
+- Multiple character classes; account systems / cloud saves
+- More than 3 biomes; custom card creation; daily challenges / seeded-run UI
+- External asset packs (programmer art only)
+- **Rigged/skinned mesh characters** (voxel-part characters only)
+- **Free-rotating camera** (snap-rotate 4×90° only)
+- **Multi-tier room connections** (connectors stay at ground level; verticality is in-room only)
+- Fall damage; swimming/climbing traversal
+- Pet system / followers; crafting; inventory beyond cards
+- A visual level editor (the JSON + viewer loop is the editor)
 
-If any of these come up in conversation as a possibility, note it and defer. Do not implement.
+If any of these come up, note it and defer.
 
 ## Build stages
 
-The project builds in stages. Each stage has a clear deliverable and is testable end-to-end on the developer's mobile device. Do not skip ahead.
+Each stage has a deliverable testable end-to-end on the developer's phone. Do not skip ahead. **Stage 0 (voxel rendering POC) is complete on `main`.**
 
-### Stage 0 — Voxel rendering proof of concept ⬅️ START HERE
+### Stage 1 — Camera, character, traversal ⬅️ START HERE
 
-**Goal**: confirm the architecture runs smoothly on the developer's phone before building gameplay on top.
+**Goal:** the new presentation layer, proven on the existing hand-authored test floor.
 
-**Deliverable**: a single web page where the developer can:
-- Open the page on their phone
-- See a 3D voxel dungeon room from a fixed-angle camera
-- Walk around with a virtual d-pad (left thumb)
-- Tap anywhere to "blow up" voxels in a sphere around the tap (instant test of destruction)
-- See debris spawn from destruction events and settle
-- Verify performance is smooth (60fps target)
+- Snap-rotate orbit camera (4 yaws, ~250ms tween, smooth follow) + rotate buttons/keys; d-pad becomes camera-relative
+- Occlusion fade for wall chunks between camera and player
+- Voxel character system: `/render/characters.js` clip set (idle/walk/cast/hit/death-crumble) + `/data/characters/player.json`; billboarded sprite code retired
+- Walkable-height-map collision (`/sim/walkable.js`): step-up ≤2, free drop; add a couple of platforms/ramps and a sunken pit to the test floor to prove it
+- **Exit test:** walk the test floor on the phone at all four angles, climb a ramp, drop off a ledge, 60fps holds
 
-**What to build**:
-- `index.html` with the importmap
-- `main.js` setting up the Three.js scene and game loop
-- A hand-coded test floor (no procgen yet) — maybe a 30×30 grid with some walls, dirt floor, water pool, oil patch, lava pit
-- Voxel mesh generator (`/render/voxel-mesh.js`) that turns the grid into Three.js geometry. For Stage 0, simple "render every visible face" is fine; greedy meshing can come later.
-- Billboarded character sprite (`/render/sprites.js`) — drawn procedurally, like a hooded figure with a torch. Always faces camera.
-- Fixed-angle camera with smooth follow (`/render/screen.js`)
-- Floating virtual d-pad (`/ui/dpad.js`, `/input/touch.js`)
-- Tap-to-destroy handler that removes voxels in a sphere and spawns debris rigid bodies via cannon-es
-- Pure reducer in `/sim` for the game state (player position, voxel grid)
-- Even at this stage, follow the architectural rules: actions, pure reducer, seeded RNG (even if not used for randomness yet, set it up correctly).
+### Stage 2 — Template format + viewer + first batch
 
-**What to deliberately NOT build at Stage 0**:
-- Procgen
-- Cards / hand UI
-- Combat
-- Enemies
-- Multiple floors
-- Sound effects (visual smoke test only)
-- Materials interacting with each other (just colored voxels for now)
-- Any UI beyond the d-pad
+**Goal:** the content pipeline exists and has been exercised once, end to end.
 
-Stage 0 is a **performance and feasibility test**. If the developer's phone runs it smoothly with destruction, we know the architecture works and can build on it. If it doesn't, we need to revisit before going further.
+- `templates.js` (JSON → stamp) + prop vocabulary + `decorators.js` (salvage v1 3D CA as `roughen_walls`)
+- `/tools/viewer.html` with `?room=` mode and the review index
+- `/tools/cavegen.html`
+- **First authored batch: 6–8 rooms** across ruins + caves families, each with a stated idea per the Part 2 rules — including at least one material set piece, one verticality room, one landmark room
+- Developer reviews the batch in the viewer; revise per notes
+- **Exit test:** developer has walked every room at all four angles and approved ≥5
 
-### Stage 1 — Procgen floor generation
+### Stage 3 — Assembler
 
-**Goal**: replace the hand-authored test floor with procedurally generated dungeons.
+**Goal:** full floors from the curated library.
 
-Build the room+tunnel procgen we sketched (rooms placed via jittered grid, connected with drunk-walker tunnels, CA-softened edges). Extrude the 2D grid into voxels. Generate a new floor on space-bar press (desktop) or button-tap (mobile).
+- `assemble.js` pipeline (topology → select → place → corridors → stamp → decorate → secrets → validate), deterministic per seed
+- `?floor=<seed>` viewer mode with topology minimap; regenerate button in-game
+- **Exit test:** ten consecutive seeds each produce a connected, completable floor; spawn→stairs walkable every time; the same seed twice produces an identical floor. (Cross-seed *distinctness* is Stage 4's exit test — it needs the full library, not the handful of Stage 2 rooms.)
 
-### Stage 2 — Materials and CA
+### Stage 4 — Content sprint
 
-Add water flow, oil pools, fire propagation, gas dissipation as cellular automata running once per environment tick. Tap-to-destroy still works; tapping fire-adjacent oil should ignite it; water near lava should make steam-gas.
+**Goal:** enough curated content that floors stop repeating.
 
-### Stage 3 — Card system v0
+- Room batches to ~25–35 approved templates across all three families; character batches to a starter cast (~6–8 enemies) via `?char=` review
+- Biome configs (palettes, family quotas, hazard/treasure quotas)
+- At least 2 secret-room templates wired through the assembler
+- **Exit test:** ten consecutive seeds produce floors that feel distinct from each other; three full runs of floor-regeneration feel varied; developer can name most rooms on sight (landmark test)
 
-Implement the card grammar (shape × element × modifier). Add a hand of 5 placeholder cards with a fan UI at bottom-right. Implement the drag-up-to-aim gesture. Cards fire spells against the environment in free roam (no enemies yet).
+### Stage 5 — Materials & CA
 
-### Stage 4 — Enemies and combat
+Fire/water/oil/gas/lava/ice behaviors on environment ticks. The pools and braziers already authored into templates come alive. **Exit test:** ignite the oil-cistern room's pool from the brazier and watch it cascade.
 
-Add enemy agents with their own decks. Implement turn-based combat with environment ticks between turns. Symmetric rules: enemies cast cards from their decks just like the player.
+### Stage 6 — Card system v0
 
-### Stage 5 — Floor progression
+Card grammar, fan UI, drag-up-to-aim (raycast to walkable surface, rotation locked while aiming, cursor offset above finger). Free-roam casting; blow open a secret room. 
 
-Stairs, pits, multiple floors, biome variation. A complete run from Floor 1 to Floor 10.
+### Stage 7 — Enemies & combat
 
-### Stage 6 — Polish and content
+Enemy agents with decks, symmetric rules, turn-based loop with environment ticks. Voxel cast comes alive.
 
-More cards, more enemies, more biomes, audio integration, particle effects, screen shake, all the game-feel toolkit. Iterate until shippable.
+### Stage 8 — Floor progression
 
-## Rules for Claude Code sessions working on this project
+Stairs, descent pits, biome shifts, a complete Floor 1→10 run.
 
-When making changes:
+### Stage 9 — Polish & content
 
-1. **Read this entire doc first.** If something seems unclear, the doc is probably the answer.
-2. **Stay in the current stage.** Don't implement Stage 4 features when we're still on Stage 1.
-3. **Follow the architectural rules.** Pure reducer, seeded RNG, /sim imports nothing, actions for all mutations.
-4. **Don't add dependencies.** The stack is fixed: Three.js, cannon-es, Howler.js. Don't pull in additional libraries without explicit user direction.
-5. **Don't add asset packs.** Programmer art only.
-6. **Commit often, with descriptive messages.** The developer iterates by reading commit diffs.
-7. **Ask before scope changes.** If a request would expand scope (new feature, new dependency, deviation from this doc), ask first.
-8. **Check the "NOT in v1" list before adding anything.** If a feature is on that list, the answer is no, even if the request seems reasonable in isolation.
+Game-feel toolkit, audio, more cards/enemies/rooms. Iterate until shippable.
+
+## Rules for Claude Code sessions
+
+1. **Read this entire doc first.**
+2. **Stay in the current stage.**
+3. **Follow the architectural rules** — pure reducer, seeded RNG, /sim imports nothing, actions for all mutations.
+4. **Follow the content-authoring rules in Part 2** when producing rooms or characters. Idea-per-room, self-review, small batches, curation before shipping.
+5. **Don't add dependencies or asset packs** without explicit direction.
+6. **Commit often, descriptive messages** — the developer iterates by reading diffs.
+7. **Ask before scope changes**; check the NOT-in-v1 list first.
 
 ## Open questions (defer until they block progress)
 
-- Combat action economy (mana? AP? both?)
-- Whether spell targeting follows ground plane only or has true 3D targeting
-- Exact biome list and progression past v1's Caves/Ruins/Deep
-- Persistence between floors (do enemies stay alive on previous floors?)
-- Save system for in-progress runs
-- Audio direction (procedural or sample-based)
-- Eventual art style (programmer art → ?)
-- Hand size cap exact number
-- Maximum spell range
-- Cancel gesture variants
-
-The right time to resolve each is when it blocks progress. Don't preemptively pin them down.
+- Combat action economy; combat initiation; movement-as-card; persistence between encounters
+- Where the player lands after a descent-pit drop (arrival placement on the next floor)
+- Exact camera tilt (tune on device at Stage 1)
+- Whether corridors deserve their own mini-templates (junction rooms) once the basic carver feels bland
+- Prop vocabulary final list (grow it as templates demand)
+- Save system for in-progress runs; audio direction; eventual art style
+- Hand size cap; maximum spell range
 
 ## What success looks like
 
-**For Stage 0**: developer opens the URL on their phone, sees a 3D voxel dungeon, walks around with a virtual d-pad, taps to blow up walls, debris falls, performance is smooth.
+**Stage 1:** the developer walks the test floor on their phone as a voxel character, spins the camera, climbs a ramp, and it's smooth.
 
-**For v1**: a complete 10-floor roguelike run takes 30-60 minutes per attempt, has enough card variety for meaningful build-decisions, has enough enemy variety to stay interesting, and feels distinctive enough that a 30-second video conveys "this isn't like other deckbuilders." Hosted on GitHub Pages, mobile-first, free to play, no accounts required.
+**Stage 4:** ten seeds, ten distinct completable floors — the "every level feels the same" problem is dead by construction, because every room in every floor was designed and approved.
 
-**Long-term**: TBD. Multiplayer, social features, MMO scale — all parked. The path to those features is enabled by the architecture but not committed to.
+**v1:** a complete 10-floor run takes 30–60 minutes, has meaningful build decisions and enemy variety, and a 30-second video conveys "this isn't like other deckbuilders." GitHub Pages, mobile-first, free, no accounts.
+
+**Long-term:** multiplayer/social/MMO all parked; the architecture keeps the door open without committing to it.
