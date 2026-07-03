@@ -69,6 +69,31 @@
       padding: 0 16px;
       pointer-events: none;
     }
+    .rotate-btn {
+      position: absolute;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 46px);
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 2px solid rgba(255, 255, 255, 0.18);
+      color: #c0c0d0;
+      font-size: 26px;
+      line-height: 1;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .rotate-btn:active {
+      background: rgba(255, 255, 255, 0.22);
+    }
+    .rotate-left { left: 16px; }
+    .rotate-right { right: 16px; }
     .dpad-base {
       position: absolute;
       width: 130px;
@@ -106,7 +131,7 @@
       <div><span class="label">Voxels</span><span id="hud-voxels">0</span></div>
       <div><span class="label">FPS</span><span id="hud-fps">0</span></div>
     </div>
-    <div id="hint">Drag to move &middot; tap to destroy a voxel</div>
+    <div id="hint">Drag to move &middot; tap to destroy &middot; &#10226;/&#10227; or Q/E to rotate</div>
   </div>
   <script type="module" src="./main.js"></script>
 </body>

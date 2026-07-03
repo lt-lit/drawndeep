@@ -29,9 +29,23 @@ const TINT_BY_HEIGHT = 0.04;
 const tmpMatrix = new THREE.Matrix4();
 const tmpColor = new THREE.Color();
 
-// Shared geometry + material across all chunks.
+// Shared geometry + material across all chunks. The faded variant is
+// swapped in per chunk when the chunk occludes the player (see
+// render/camera.js). depthWrite stays off while faded: exposed voxels
+// are full boxes, so coplanar faces between neighbours would z-fight
+// under blending otherwise.
 const sharedGeometry = new THREE.BoxGeometry(1, 1, 1);
 const sharedMaterial = new THREE.MeshLambertMaterial();
+const sharedFadedMaterial = new THREE.MeshLambertMaterial({
+  transparent: true,
+  opacity: 0.25,
+  depthWrite: false,
+});
+
+export function setChunkFaded(handle, faded) {
+  const material = faded ? sharedFadedMaterial : sharedMaterial;
+  if (handle.object.material !== material) handle.object.material = material;
+}
 
 export function buildVoxelMeshes(grid, chunks) {
   const total = chunkCount(chunks);

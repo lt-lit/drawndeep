@@ -22,7 +22,12 @@ export function bindDesktopInput(canvas) {
   }
 
   window.addEventListener('keydown', (e) => {
-    pressed.add(e.key.toLowerCase());
+    const key = e.key.toLowerCase();
+    // Q/E snap-rotate the camera. One step per press — ignore key repeat.
+    if (!e.repeat && (key === 'q' || key === 'e')) {
+      pushPending({ type: 'RotateCamera', dir: key === 'e' ? 1 : -1 });
+    }
+    pressed.add(key);
     updateIntent();
   });
   window.addEventListener('keyup', (e) => {

@@ -73,10 +73,18 @@ Then `http://localhost:8000`. ES modules require HTTP (`file://` won't work).
 
 ## Current stage
 
-**Stage 1** — camera, character, traversal. Snap-rotate orbit camera
-(4×90°), voxel-part player character replacing the billboard sprite,
-walkable-height-map collision (step ≤2, free drop), occlusion fade.
-Proven on the hand-authored test floor before any procgen work.
+**Stage 1** — camera, character, traversal. Proven on the hand-authored
+test floor before any procgen work. Split into sub-stages:
+
+- **1a — camera (done):** snap-rotate orbit camera in `render/camera.js`
+  (4 diagonal yaws, ~250ms tween, ~50° tilt — tune on device),
+  ⟲/⟳ buttons + Q/E, camera-relative d-pad (intent rotated to world
+  space in `main.js` before it enters `Tick`), per-chunk occlusion fade.
+- **1b — character:** voxel-part player (`render/characters.js` clip set
+  + `/data/characters/player.json`); billboard sprite code retired.
+- **1c — traversal:** walkable-height-map collision (`sim/walkable.js`,
+  step ≤2, free drop); platforms/ramps and a sunken pit added to the
+  test floor to prove it.
 
 Stage 0 (voxel rendering POC) is complete on `main`. The old CA procgen
 branch (`claude/procgen-dungeon-design-Sq4hh`) is superseded — salvage its

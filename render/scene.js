@@ -1,16 +1,11 @@
 // Three.js scene setup + per-frame render. Reads sim state, never mutates it.
 
 import * as THREE from 'three';
-import { buildVoxelMeshes, refreshDirtyChunks, voxelFromHit } from './voxel-mesh.js';
+import { buildVoxelMeshes, refreshDirtyChunks, voxelFromHit, setChunkFaded } from './voxel-mesh.js';
 import { chunkCount } from '../sim/voxels.js';
 import { createPlayerSprite } from './sprites.js';
+import { createCameraRig } from './camera.js';
 
-// Camera framing: ~25° from vertical (very top-down, more map-like than
-// Pokemon's 50°) at ~88 units distance. Scale together if you change the
-// player size. LOOK_AHEAD raises the focal point to chest height.
-const CAMERA_OFFSET = new THREE.Vector3(0, 80, 36);
-const CAMERA_LOOK_AHEAD = new THREE.Vector3(0, 5, 0);
-const CAMERA_LERP = 0.12;
 const FOV = 35;
 
 export function createScene(canvas, initialState) {
@@ -26,9 +21,8 @@ export function createScene(canvas, initialState) {
   scene.fog = new THREE.Fog(0x0a0a0f, 60, 160);
 
   const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 200);
-  const cameraTarget = new THREE.Vector3();
-  const cameraDesiredPos = new THREE.Vector3();
-  const cameraDesiredTarget = new THREE.Vector3();
+  const cameraRig = createCameraRig(camera);
+  const occludedChunks = new Set();
 
   // Lighting: cheap and stylised. No shadows.
   const ambient = new THREE.AmbientLight(0xffffff, 0.55);
@@ -50,11 +44,10 @@ export function createScene(canvas, initialState) {
   const lastChunkRevisions = new Uint32Array(chunkCount(initialState.chunks));
   lastChunkRevisions.set(initialState.chunks.revisions);
 
-  // Player sprite (billboarded).
+  // Player sprite (billboarded). Retired in Stage 1b for the voxel-part
+  // character; billboards at least stay legible under snap-rotation.
   const playerSprite = createPlayerSprite();
   scene.add(playerSprite);
-
-  let cameraInitialised = false;
 
   function resize() {
     const w = canvas.clientWidth || window.innerWidth;
@@ -73,24 +66,14 @@ export function createScene(canvas, initialState) {
     // Player sprite tracks player position; sprite is anchored at its bottom.
     playerSprite.position.set(state.player.x, state.player.y, state.player.z);
 
-    // Camera follow.
-    cameraDesiredPos.set(
-      state.player.x + CAMERA_OFFSET.x,
-      state.player.y + CAMERA_OFFSET.y,
-      state.player.z + CAMERA_OFFSET.z,
-    );
-    cameraDesiredTarget
-      .set(state.player.x, state.player.y, state.player.z)
-      .add(CAMERA_LOOK_AHEAD);
-    if (!cameraInitialised) {
-      camera.position.copy(cameraDesiredPos);
-      cameraTarget.copy(cameraDesiredTarget);
-      cameraInitialised = true;
-    } else {
-      camera.position.lerp(cameraDesiredPos, CAMERA_LERP);
-      cameraTarget.lerp(cameraDesiredTarget, CAMERA_LERP);
+    // Camera follow + snap-rotate tween, then fade any chunks whose
+    // solid voxels sit between the (post-move) camera and the player.
+    cameraRig.update(state, performance.now());
+    cameraRig.collectOccludedChunks(state, occludedChunks);
+    const handles = voxelWorld.handles;
+    for (let i = 0; i < handles.length; i++) {
+      setChunkFaded(handles[i], occludedChunks.has(i));
     }
-    camera.lookAt(cameraTarget);
 
     renderer.render(scene, camera);
   }
@@ -110,5 +93,11 @@ export function createScene(canvas, initialState) {
     return voxelFromHit(hits[0]);
   }
 
-  return { render, pickVoxel, renderer };
+  return {
+    render,
+    pickVoxel,
+    renderer,
+    rotateCamera: cameraRig.rotate,
+    mapIntent: cameraRig.mapIntent,
+  };
 }
