@@ -4,14 +4,17 @@
 
 import { buildTestFloor, STARTING_POSITION } from './floor.js';
 import {
-  getVoxel, setVoxel, isSolid, MATERIAL,
+  getVoxel, setVoxel, MATERIAL,
   createChunks, bumpAffectedChunks,
 } from './voxels.js';
+import { walkableMove, groundHeight, STEP_UP } from './walkable.js';
 
 const PLAYER_SPEED = 0.30;        // voxels per tick (~18 voxels/sec at 60Hz, ~1.8 player-heights/sec)
-const PLAYER_RADIUS = 1.0;        // half-width in voxels; AABB is 2x2 in plan view
-const PLAYER_HEIGHT = 10;         // voxels — full-body collision iterates this range
+const PLAYER_RADIUS = 1.0;        // half-width in voxels; footprint is 2x2 in plan view
+const PLAYER_HEIGHT = 10;         // voxels — body clearance checks iterate this range
 const TICKS_PER_SECOND = 60;
+const GRAVITY = 0.05;             // voxels/tick² — snappy arcade fall, ~0.2s for a 4-voxel drop
+const MAX_FALL = 1.2;             // voxels/tick terminal velocity
 
 export function initialState(seed = 1) {
   const grid = buildTestFloor();
@@ -22,7 +25,7 @@ export function initialState(seed = 1) {
     voxelRevision: 0,
     grid,
     chunks: createChunks(grid.width, grid.height, grid.depth),
-    player: { ...STARTING_POSITION },
+    player: { ...STARTING_POSITION, vy: 0 },
   };
 }
 
@@ -39,7 +42,8 @@ export function reducer(state, action) {
 
 function tickReducer(state, action) {
   const intent = action.intent || { x: 0, y: 0 };
-  let { x, y, z } = state.player;
+  let { x, y, z, vy } = state.player;
+  const grid = state.grid;
 
   // Cap the movement vector magnitude so diagonal isn't faster than cardinal.
   let dx = intent.x * PLAYER_SPEED;
@@ -50,22 +54,44 @@ function tickReducer(state, action) {
     dz = (dz / mag) * PLAYER_SPEED;
   }
 
-  // Per-axis collision: try X then Z so the player slides along walls.
-  // Full body, not just feet — every voxel level the player occupies in y
-  // is checked, so low overhangs and thick walls block the body properly.
+  // Walkable-height movement: each axis move may step up ≤ STEP_UP (only
+  // while grounded — no ledge-snapping mid-fall) and slides on block.
+  const grounded = y <= groundHeight(grid, x, z, PLAYER_RADIUS, y) + 1e-6;
+  const stepUp = grounded ? STEP_UP : 0;
   if (dx !== 0) {
-    const nx = x + dx;
-    if (!collidesAt(state.grid, nx, y, z, PLAYER_RADIUS, PLAYER_HEIGHT)) x = nx;
+    const feet = walkableMove(grid, x + dx, z, y, PLAYER_RADIUS, PLAYER_HEIGHT, stepUp);
+    if (feet !== null) {
+      x += dx;
+      y = feet;
+    }
   }
   if (dz !== 0) {
-    const nz = z + dz;
-    if (!collidesAt(state.grid, x, y, nz, PLAYER_RADIUS, PLAYER_HEIGHT)) z = nz;
+    const feet = walkableMove(grid, x, z + dz, y, PLAYER_RADIUS, PLAYER_HEIGHT, stepUp);
+    if (feet !== null) {
+      z += dz;
+      y = feet;
+    }
+  }
+
+  // Gravity: free drop of any height, no fall damage in v1. Walking off
+  // an edge (or losing the voxel underfoot to destruction) starts a fall.
+  const ground = groundHeight(grid, x, z, PLAYER_RADIUS, y);
+  if (y > ground + 1e-6) {
+    vy = Math.max(vy - GRAVITY, -MAX_FALL);
+    y += vy;
+    if (y <= ground) {
+      y = ground;
+      vy = 0;
+    }
+  } else {
+    y = ground;
+    vy = 0;
   }
 
   return {
     ...state,
     tick: state.tick + 1,
-    player: { x, y, z },
+    player: { x, y, z, vy },
   };
 }
 
@@ -78,26 +104,6 @@ function destroyReducer(state, action) {
     ...state,
     voxelRevision: state.voxelRevision + 1,
   };
-}
-
-// Player AABB vs voxel grid. Checks every solid voxel overlapping the
-// player's full-body box: footprint at (x,z) with radius r, and every
-// y-level from y up to y+height.
-function collidesAt(grid, x, y, z, r, height) {
-  const minX = Math.floor(x - r);
-  const maxX = Math.floor(x + r);
-  const minZ = Math.floor(z - r);
-  const maxZ = Math.floor(z + r);
-  const minY = Math.floor(y);
-  const maxY = Math.floor(y + height - 0.0001);
-  for (let cy = minY; cy <= maxY; cy++) {
-    for (let cz = minZ; cz <= maxZ; cz++) {
-      for (let cx = minX; cx <= maxX; cx++) {
-        if (isSolid(getVoxel(grid, cx, cy, cz))) return true;
-      }
-    }
-  }
-  return false;
 }
 
 export const SIM = {

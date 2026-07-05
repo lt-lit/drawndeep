@@ -56,6 +56,7 @@ export function createScene(canvas, initialState, content) {
   const prevPlayer = {
     x: initialState.player.x,
     z: initialState.player.z,
+    dispY: initialState.player.y,
     ms: performance.now(),
   };
   let deathAtMs = 0;
@@ -82,9 +83,15 @@ export function createScene(canvas, initialState, content) {
     const dx = state.player.x - prevPlayer.x;
     const dz = state.player.z - prevPlayer.z;
     const speed = Math.hypot(dx, dz) / dtSec;
+    // Step-ups snap ≤2 voxels in the sim; ease the character's visual y
+    // over a few frames. Falls are already smooth (sim-side gravity).
+    prevPlayer.dispY += (state.player.y - prevPlayer.dispY) * 0.45;
+    if (Math.abs(state.player.y - prevPlayer.dispY) < 0.01) {
+      prevPlayer.dispY = state.player.y;
+    }
     player.update(now, {
       x: state.player.x,
-      y: state.player.y,
+      y: prevPlayer.dispY,
       z: state.player.z,
       speed,
       moveYaw: speed > 0.5 ? Math.atan2(dx, dz) : null,

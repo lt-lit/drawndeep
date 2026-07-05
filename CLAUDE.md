@@ -84,9 +84,15 @@ test floor before any procgen work. Split into sub-stages:
   clip set + `/data/characters/player.json`, one InstancedMesh per
   character); cannon-es death crumble; billboard sprite code retired.
   Debug clip keys C/H/X (desktop) until the sim emits combat events.
-- **1c — traversal:** walkable-height-map collision (`sim/walkable.js`,
-  step ≤2, free drop); platforms/ramps and a sunken pit added to the
-  test floor to prove it.
+- **1c — traversal (done):** walkable-height movement (`sim/walkable.js`,
+  step ≤2, gravity free-drop, scanned live so destruction updates
+  walkability); test floor raised onto a 4-thick slab with stepped
+  terraces, a 4-deep sunken pit + stepped escape, climbable crates and
+  a wading pool to prove it.
+
+Stage 1 is code-complete pending the on-device exit test (walk the
+floor at all four angles, climb the terraces, drop into the pit, 60fps).
+Next up: Stage 2 — template format, viewer, first content batch.
 
 Stage 0 (voxel rendering POC) is complete on `main`. The old CA procgen
 branch (`claude/procgen-dungeon-design-Sq4hh`) is superseded — salvage its

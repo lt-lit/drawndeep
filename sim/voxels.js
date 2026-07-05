@@ -45,9 +45,10 @@ export function indexOf(grid, x, y, z) {
 
 export function getVoxel(grid, x, y, z) {
   if (!inBounds(grid, x, y, z)) {
-    // Out of bounds in X/Z reads as solid stone (world is bounded by walls);
-    // out of bounds in Y reads as air (open above, void below).
-    if (y < 0 || y >= grid.height) return MATERIAL.AIR;
+    // Out of bounds reads: open sky above, bedrock below (so walkable
+    // support scans always terminate), solid stone beyond X/Z (world
+    // is bounded by rock).
+    if (y >= grid.height) return MATERIAL.AIR;
     return MATERIAL.STONE;
   }
   return grid.cells[indexOf(grid, x, y, z)];
