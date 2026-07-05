@@ -3,12 +3,17 @@
 import * as THREE from 'three';
 import { buildVoxelMeshes, refreshDirtyChunks, voxelFromHit, setChunkFaded } from './voxel-mesh.js';
 import { chunkCount } from '../sim/voxels.js';
-import { createPlayerSprite } from './sprites.js';
+import { createCharacter } from './characters.js';
 import { createCameraRig } from './camera.js';
 
 const FOV = 35;
 
-export function createScene(canvas, initialState) {
+// How long crumbled parts lie around before the debug auto-revive.
+// Death has no sim-side trigger until Stage 7, so this keeps the X-key
+// preview loop self-resetting.
+const DEBUG_REVIVE_MS = 4200;
+
+export function createScene(canvas, initialState, content) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: window.devicePixelRatio < 2,
@@ -44,10 +49,16 @@ export function createScene(canvas, initialState) {
   const lastChunkRevisions = new Uint32Array(chunkCount(initialState.chunks));
   lastChunkRevisions.set(initialState.chunks.revisions);
 
-  // Player sprite (billboarded). Retired in Stage 1b for the voxel-part
-  // character; billboards at least stay legible under snap-rotation.
-  const playerSprite = createPlayerSprite();
-  scene.add(playerSprite);
+  // Voxel-part player character, defined by /data/characters/player.json
+  // (loaded by main.js and passed in as plain data).
+  const player = createCharacter(content.playerDef);
+  scene.add(player.root);
+  const prevPlayer = {
+    x: initialState.player.x,
+    z: initialState.player.z,
+    ms: performance.now(),
+  };
+  let deathAtMs = 0;
 
   function resize() {
     const w = canvas.clientWidth || window.innerWidth;
@@ -63,12 +74,32 @@ export function createScene(canvas, initialState) {
     // Rebuild only the chunks whose revision counter changed.
     refreshDirtyChunks(voxelWorld.handles, state.grid, state.chunks, lastChunkRevisions);
 
-    // Player sprite tracks player position; sprite is anchored at its bottom.
-    playerSprite.position.set(state.player.x, state.player.y, state.player.z);
+    // Drive the character from observed sim movement: speed blends
+    // idle↔walk, the movement direction sets facing. The renderer only
+    // reads state — it never needs to know about input or actions.
+    const now = performance.now();
+    const dtSec = Math.max(1e-3, (now - prevPlayer.ms) / 1000);
+    const dx = state.player.x - prevPlayer.x;
+    const dz = state.player.z - prevPlayer.z;
+    const speed = Math.hypot(dx, dz) / dtSec;
+    player.update(now, {
+      x: state.player.x,
+      y: state.player.y,
+      z: state.player.z,
+      speed,
+      moveYaw: speed > 0.5 ? Math.atan2(dx, dz) : null,
+    });
+    prevPlayer.x = state.player.x;
+    prevPlayer.z = state.player.z;
+    prevPlayer.ms = now;
+    if (deathAtMs && now - deathAtMs > DEBUG_REVIVE_MS) {
+      player.revive();
+      deathAtMs = 0;
+    }
 
     // Camera follow + snap-rotate tween, then fade any chunks whose
     // solid voxels sit between the (post-move) camera and the player.
-    cameraRig.update(state, performance.now());
+    cameraRig.update(state, now);
     cameraRig.collectOccludedChunks(state, occludedChunks);
     const handles = voxelWorld.handles;
     for (let i = 0; i < handles.length; i++) {
@@ -93,10 +124,21 @@ export function createScene(canvas, initialState) {
     return voxelFromHit(hits[0]);
   }
 
+  // Debug clip trigger (C/H/X on desktop) until the sim emits real
+  // combat events in Stage 7.
+  function playClip(name) {
+    if (name === 'death') {
+      if (player.isDead()) return;
+      deathAtMs = performance.now();
+    }
+    player.play(name);
+  }
+
   return {
     render,
     pickVoxel,
     renderer,
+    playClip,
     rotateCamera: cameraRig.rotate,
     mapIntent: cameraRig.mapIntent,
   };

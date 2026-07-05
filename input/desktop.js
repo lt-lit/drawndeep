@@ -27,6 +27,14 @@ export function bindDesktopInput(canvas) {
     if (!e.repeat && (key === 'q' || key === 'e')) {
       pushPending({ type: 'RotateCamera', dir: key === 'e' ? 1 : -1 });
     }
+    // Debug clip previews until the sim emits real combat events
+    // (Stage 7): C cast, H hit, X death-crumble (auto-revives).
+    if (!e.repeat && (key === 'c' || key === 'h' || key === 'x')) {
+      pushPending({
+        type: 'DebugClip',
+        clip: key === 'c' ? 'cast' : key === 'h' ? 'hit' : 'death',
+      });
+    }
     pressed.add(key);
     updateIntent();
   });

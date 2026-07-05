@@ -1,0 +1,36 @@
+{
+  "id": "player",
+  "notes": "The player wizard. Silhouette: pointed hat + staff with orb — reads as 'caster' at camera distance and keeps continuity with the Stage-0 sprite so the swap feels like an upgrade, not a replacement.",
+  "heightVoxels": 10,
+  "palette": {
+    "robe": "#3949ab",
+    "skirt": "#2c3676",
+    "skin": "#e8cfa8",
+    "hat": "#303f9f",
+    "staff": "#8a5a32",
+    "orb": "#7fdcff"
+  },
+  "parts": [
+    { "name": "legL", "size": [1.2, 3.0, 1.4], "offset": [-0.75, 1.5, 0], "pivot": [0, 1.5, 0], "color": "skirt" },
+    { "name": "legR", "size": [1.2, 3.0, 1.4], "offset": [0.75, 1.5, 0], "pivot": [0, 1.5, 0], "color": "skirt" },
+    { "name": "torso", "size": [3.0, 4.0, 2.0], "offset": [0, 5.0, 0], "color": "robe" },
+    { "name": "head", "size": [2.2, 2.2, 2.2], "offset": [0, 3.1, 0], "pivot": [0, -1.1, 0], "parent": "torso", "color": "skin" },
+    { "name": "hatBrim", "size": [3.2, 0.5, 3.2], "offset": [0, 1.35, 0], "parent": "head", "color": "hat" },
+    { "name": "hatTop", "size": [1.5, 1.8, 1.5], "offset": [0, 2.5, 0], "parent": "head", "color": "hat" },
+    { "name": "armL", "size": [0.9, 3.4, 0.9], "offset": [-1.95, 0.3, 0], "pivot": [0, 1.7, 0], "parent": "torso", "color": "robe" },
+    { "name": "armR", "size": [0.9, 3.4, 0.9], "offset": [1.95, 0.3, 0], "pivot": [0, 1.7, 0], "parent": "torso", "color": "robe" },
+    { "name": "staff", "size": [0.35, 6.8, 0.35], "offset": [0.75, -1.0, 0.3], "parent": "armR", "color": "staff" },
+    { "name": "orb", "size": [0.9, 0.9, 0.9], "offset": [0, 3.6, 0], "parent": "staff", "color": "orb" }
+  ],
+  "anim": {
+    "idleSway": 0.05,
+    "idleBobHz": 0.8,
+    "walkBob": 0.22,
+    "armSwingDeg": 30,
+    "legSwingDeg": 35,
+    "castLunge": 0.35,
+    "castArm": "armR",
+    "hitRecoil": 0.3,
+    "deathStyle": "crumble"
+  }
+}

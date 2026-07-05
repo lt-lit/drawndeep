@@ -14,7 +14,11 @@ const uiRoot = document.getElementById('ui');
 
 let state = initialState(/*seed=*/ 0xC0FFEE);
 
-const sceneApi = createScene(canvas, state);
+// Content JSON is loaded here and passed in as plain data — neither
+// /sim nor /render fetches. Top-level await is fine in a module script.
+const playerDef = await fetch('./data/characters/player.json').then((r) => r.json());
+
+const sceneApi = createScene(canvas, state, { playerDef });
 const dpad = createDpad(uiRoot);
 createRotateButtons(uiRoot);
 bindTouchInput(canvas, dpad);
@@ -53,6 +57,8 @@ function frame(now) {
       } else if (ev.type === 'RotateCamera') {
         // Camera yaw is renderer state, not sim state — no reducer action.
         sceneApi.rotateCamera(ev.dir);
+      } else if (ev.type === 'DebugClip') {
+        sceneApi.playClip(ev.clip);
       }
     }
   }
